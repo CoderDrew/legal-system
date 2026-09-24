@@ -1,0 +1,555 @@
+This is what gave me the idea to build something like this. This is the real job posting that we are building our role-play scenario and software from
+
+Legal Operations AI MVP / Legacy Legal System AI Overhaul - Senior AI Product Engineer
+Posted 2 days ago
+Worldwide
+
+Summary
+We are an established law firm looking for a senior AI product engineer / full-stack developer to design and build a production-ready MVP that uses AI to streamline internal legal and operational workflows.
+
+This is not a basic chatbot project.
+
+We want to build an internal AI operations platform that can work with firm data, documents, emails and existing business systems to reduce repetitive administrative work, improve knowledge retrieval and help our team work more efficiently.
+
+We are looking for someone who can own the product end to end:
+
+business problem
+→ workflow design
+→ architecture
+→ AI/model selection
+→ full-stack development
+→ integrations
+→ testing
+→ deployment
+→ iteration with real users
+
+Founder, technical founder and product-builder backgrounds are particularly welcome.
+
+What we want to build
+
+The first version will focus on a small number of high-value workflows rather than trying to automate the entire firm at once.
+
+Potential workflows include:
+
+AI-assisted client and matter intake
+Document summarisation and analysis
+Email and correspondence summarisation
+Extraction of dates, parties, obligations and action items
+Matter timelines
+Internal knowledge search
+Retrieval across firm documents
+Drafting first-pass emails, notes and internal documents
+Document comparison
+Task extraction and routing
+Automated follow-up workflows
+Internal research assistants
+Operational dashboards
+Reporting and workflow analytics
+AI-assisted document classification
+Human-in-the-loop review workflows
+Browser-based productivity tools or extensions
+Internal workflow automation across multiple systems
+
+The selected engineer will help us decide which workflows provide the best ROI for the MVP.
+
+AI / LLM experience
+
+We are specifically looking for someone with hands-on experience building applications around modern AI models and APIs.
+
+Experience with some of the following is highly relevant:
+
+OpenAI
+GPT-4 / GPT-5 family
+Anthropic
+Claude
+Claude Code
+xAI
+Grok
+Groq
+Meta Llama / LLaMA
+Unsloth
+ElevenLabs
+Runway
+Midjourney
+Suno
+Udio
+multimodal AI models
+text generation
+image generation
+voice AI
+speech / transcription
+AI video workflows
+
+We are model-agnostic and expect the developer to choose models based on the task rather than forcing everything through one provider.
+
+The architecture should make it possible to change models as the market evolves.
+
+Applied AI capabilities
+
+Relevant experience includes:
+
+AI agents
+agentic workflows
+tool calling / function calling
+multi-agent systems
+multi-model orchestration
+RAG
+retrieval-augmented generation
+semantic search
+embeddings
+vector search
+document ingestion
+structured outputs
+JSON schema outputs
+prompt engineering
+prompt management
+system prompts
+model routing
+model fallback
+AI workflow automation
+context management
+long-context LLM workflows
+AI assistants
+AI chatbots
+autonomous and semi-autonomous workflows
+human-in-the-loop AI
+AI guardrails
+confidence / abstention logic
+source citations
+output validation
+LLM monitoring
+evaluation / testing of AI outputs
+
+Experience with MCP / Model Context Protocol, agent tool ecosystems or similar emerging AI integration standards is also valuable.
+
+AI safety and reliability
+
+Because this system will be used inside a law firm, reliability is more important than producing an answer every time.
+
+We are especially interested in developers who understand the failure modes of LLM systems.
+
+Relevant areas include:
+
+hallucination mitigation
+prompt injection
+indirect prompt injection
+malicious document content
+unsafe tool use
+information integrity
+data leakage
+model misuse
+source verification
+retrieval grounding
+role/permission boundaries
+structured validation
+human escalation
+auditability
+
+The system must be able to distinguish between:
+
+known information
+→ inferred information
+→ uncertain information
+→ missing information
+
+An AI assistant should be allowed to say that it does not know.
+
+It should not turn uncertainty into confident legal or operational statements.
+
+Architecture philosophy
+
+We expect the platform to separate AI reasoning from business-critical rules.
+
+A typical workflow may look like:
+
+user request
+→ authenticated user/matter context
+→ approved firm data
+→ retrieval
+→ deterministic rules
+→ AI/model layer
+→ structured output
+→ validation
+→ human approval where required
+→ action
+→ audit log
+
+LLMs should interpret, classify, summarise and assist.
+
+They should not become the uncontrolled source of truth for sensitive business decisions.
+
+Document and knowledge workflows
+
+A major part of the MVP may involve working with documents.
+
+Relevant experience includes:
+
+PDF ingestion
+DOCX
+email
+spreadsheets
+OCR where necessary
+document parsing
+chunking
+metadata extraction
+embeddings
+semantic search
+document classification
+entity extraction
+knowledge bases
+RAG pipelines
+source attribution
+citations
+permissions-aware retrieval
+
+We want users to be able to understand where an AI-generated answer came from.
+
+Security and confidentiality
+
+The application may work with confidential, commercially sensitive and potentially privileged information.
+
+Security must therefore be part of the architecture from the beginning.
+
+Expected considerations include:
+
+secure authentication
+role-based access control / RBAC
+matter-level access
+user-level permissions
+private file storage
+signed file access
+encryption in transit
+encryption at rest
+tenant/data isolation
+audit logging
+secrets management
+least-privilege API access
+secure webhook handling
+rate limiting
+secure session management
+logging without exposing sensitive content
+backup/recovery procedures
+controlled production access
+
+We also want explicit control over which external AI providers receive which data.
+
+Confidential documents must not automatically be sent to arbitrary third-party AI services.
+
+Full-stack development
+
+This is an AI product engineering role, not an ML research role.
+
+The developer should be comfortable building the complete product around the models.
+
+Preferred stack:
+
+React
+Next.js
+JavaScript
+TypeScript
+Node.js
+REST APIs
+API integrations
+PostgreSQL
+MySQL
+SQL
+AWS
+S3 or equivalent private object storage
+Git / GitHub
+CI/CD
+background jobs
+queues
+webhooks
+monitoring
+logging
+
+Experience with PHP is useful because some existing systems may include PHP or WordPress components.
+
+SaaS / product architecture
+
+Experience building production SaaS products is highly valuable.
+
+Relevant experience includes:
+
+multi-user applications
+multi-tenant SaaS
+authentication
+user permissions
+admin dashboards
+workflow systems
+reporting
+subscription billing
+Stripe
+usage limits
+API integrations
+data-heavy applications
+internal tools
+marketplaces
+e-commerce systems
+intelligence platforms
+workflow automation
+
+We are particularly interested in engineers who have operated software after launch, not only built prototypes.
+
+Existing systems and integrations
+
+The MVP may need to connect to several existing systems.
+
+Potential integrations include:
+
+internal databases
+email
+document storage
+cloud storage
+CRM
+legal practice / matter-management software
+accounting systems
+billing systems
+Stripe
+external APIs
+WordPress
+internal web applications
+browser extensions
+third-party SaaS tools
+
+We value someone who is comfortable understanding an existing system before recommending that it be replaced.
+
+Product thinking
+
+This is an important part of the role.
+
+We do not want to hand someone a large PRD containing every screen and technical decision.
+
+We want someone who can speak with the people doing the work and identify:
+
+what is genuinely repetitive
+where errors happen
+where AI adds value
+where deterministic automation is better
+where human review is necessary
+which workflow should be built first
+what should wait until later
+
+We want the developer to challenge unnecessary complexity.
+
+A technically impressive feature that nobody uses is not a successful outcome.
+
+Founder / operator experience
+
+We strongly value people who have previously built their own products or companies.
+
+Experience such as the following is relevant:
+
+taking a SaaS product from zero to launch
+finding and supporting customers
+pricing software
+operating production infrastructure
+building internal processes
+working directly with customers
+managing a small team
+building data/intelligence products
+making product decisions without a large organisation around you
+balancing technical quality with commercial reality
+
+We are open to someone whose career does not follow a traditional large-company engineering path if they have strong evidence that they can build and operate real products.
+
+Trust & safety / information integrity
+
+Experience in trust & safety is a major plus.
+
+Examples include:
+
+abuse detection
+malicious-content detection
+platform security
+ad security
+fraud signals
+spam detection
+content review
+information integrity
+blacklists / reputation systems
+unsafe automation
+adversarial inputs
+prompt injection research
+
+Legal AI has a particularly low tolerance for confidently wrong output, so experience building systems where false positives and unsupported claims matter is valuable.
+
+AI creative / multimodal experience
+
+While the MVP is primarily focused on legal operations, we are interested in people who have broader experience orchestrating different AI modalities.
+
+This may include workflows involving:
+
+LLMs
+image models
+video models
+speech models
+voice synthesis
+music generation
+multimodal models
+
+Tools such as Runway, Midjourney, ElevenLabs, Suno and Udio are relevant because they demonstrate experience building workflows around rapidly changing AI platforms rather than relying on a single API.
+
+What we are NOT looking for
+
+We are not looking for:
+
+a generic ChatGPT wrapper
+a basic chatbot freelancer
+a pure prompt writer
+someone who automatically uses an LLM for every problem
+someone who needs every implementation decision specified
+an unnecessarily complex microservice architecture
+autonomous AI making legal decisions
+AI-generated output presented as verified fact without safeguards
+a developer who disappears after the MVP
+a research-only ML engineer who does not build products
+
+Custom model training is not a requirement.
+
+Python, PyTorch and TensorFlow are not mandatory if the candidate has strong experience building production AI applications using modern model APIs.
+
+MVP approach
+
+We expect the first phase to be intentionally narrow.
+
+A good V1 might contain:
+
+Secure workspace
+
+Authenticated users can work within authorised matters or projects.
+
+Document ingestion
+
+Users can securely add documents, emails or other approved data sources.
+
+AI assistant
+
+The assistant can:
+
+answer questions
+summarise information
+extract structured information
+identify actions and deadlines
+create timelines
+find relevant source material
+generate first drafts
+Grounded responses
+
+Where appropriate, responses should reference the underlying document or source.
+
+Workflow actions
+
+Approved AI output may trigger actions such as:
+
+creating a task
+assigning work
+producing a draft
+adding a note
+flagging something for review
+updating an internal workflow
+Human review
+
+Sensitive or uncertain actions remain pending until approved.
+
+Administration
+
+Admins should have visibility into:
+
+usage
+users
+workflows
+errors
+AI/model usage
+costs
+audit history
+failed or uncertain actions
+Future phases
+
+Potential later work includes:
+
+advanced agent workflows
+deeper RAG / knowledge systems
+email assistants
+browser extensions
+client-facing AI
+voice AI
+transcription
+meeting/call intelligence
+document comparison
+workflow agents
+autonomous background tasks
+additional model providers
+analytics
+internal AI tooling
+model routing
+local/private models
+fine-tuned or adapter-based models where justified
+LoRA / QLoRA / Unsloth experimentation where there is a genuine use case
+
+We do not expect all of this in the initial MVP.
+
+Working relationship
+
+We intend this to start with a paid discovery and architecture phase and continue into implementation.
+
+The ideal person can stay involved through:
+
+discovery
+→ architecture
+→ MVP
+→ testing
+→ deployment
+→ user feedback
+→ iteration
+→ future versions
+
+This could become a long-term relationship as we expand AI usage across the firm.
+
+Ideal candidate
+
+You are likely a strong fit if you are some combination of:
+
+Senior Full-Stack Engineer
+AI Product Engineer
+Applied AI Engineer
+Technical Founder
+Founding Engineer
+Solutions Engineer
+Forward Deployed Engineer
+AI Automation Engineer
+SaaS Product Builder
+
+You should be comfortable moving between product, engineering, AI and business workflows rather than treating them as separate jobs.
+
+Key technologies / areas
+
+React · Next.js · JavaScript · TypeScript · Node.js · PHP · PostgreSQL · MySQL · SQL · AWS · SaaS · APIs · REST · Webhooks · GitHub · Stripe · AI Agents · Agentic AI · RAG · LLM · Generative AI · OpenAI · GPT · Anthropic · Claude · Claude Code · xAI · Grok · Groq · Meta Llama · LLaMA · Unsloth · ElevenLabs · Runway · Midjourney · Suno · Udio · MCP · Tool Calling · Function Calling · Structured Outputs · Embeddings · Vector Search · Semantic Search · Prompt Engineering · Prompt Injection · AI Safety · Trust & Safety · Information Integrity · Workflow Automation · Multi-Model Orchestration · Multimodal AI · AI Assistants · AI Chatbots · Human-in-the-Loop · Document AI · Knowledge Management · API Integration · Full-Stack Development · Product Development · Technical Architecture
+
+Engagement
+Remote
+Senior / Expert level
+Paid initial discovery
+Followed by MVP development
+Potential long-term engagement
+Individual senior developers preferred
+Flexible on exact technology choices
+Budget based on experience and proposed scope
+Quality, product judgment and ownership are more important than lowest price
+
+More than 30 hrs/week
+Hourly
+6+ months
+Duration
+Expert
+Experience Level
+$59.00
+
+-
+
+$97.00
+
+Hourly
+Remote Job
+Complex project
+Project Type
