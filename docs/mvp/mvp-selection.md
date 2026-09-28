@@ -97,4 +97,6 @@ Read-only operation reduces action risk but does not make inaccuracies harmless.
 
 ## Next step
 
-Define the selected MVP's explicit scope, success criteria, and validation gates before beginning technical feasibility research, architecture, evaluation design, or implementation planning.
+V1 success outcomes, evaluation principles, and the product risk model are defined in [`v1-success-and-risk.md`](./v1-success-and-risk.md).
+
+The next phase is technical feasibility investigation, beginning with whether Clio can provide the identity, context, relationships, data access, and permission boundaries required to serve as MatterMind's trustworthy matter anchor. Architecture should follow feasibility findings rather than precede them.
