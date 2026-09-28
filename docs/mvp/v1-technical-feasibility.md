@@ -291,10 +291,10 @@ The most important remaining uncertainties are:
 
 These are MVP validation questions, not findings already established.
 
-## Next phase: MatterMind V1 Architecture
+## Architecture handoff
 
-The architecture phase should use the product scope, success outcomes, risk model, and feasibility findings as constraints. It should begin with requirements earned through discovery and feasibility, not preferred technologies.
+Architecture Phase 1 is recorded in [`mattermind-v1-architecture.md`](../architecture/mattermind-v1-architecture.md). It uses the product scope, success outcomes, risk model, and feasibility findings as constraints rather than beginning with preferred technologies.
 
-The architecture phase will need to determine major system and source/provider boundaries; evidence ingestion and retrieval flow; matter association and authorization flow; evidence normalization; the reasoning or orchestration boundary; provenance preservation; structured Matter Status Brief generation; uncertainty and conflict representation; evaluation hooks; and the synthetic-data development strategy.
+Its checkpoint is **Complete enough to begin implementation**. The architecture is not final, and the open reasoning-granularity question remains subject to experimentation.
 
-No decisions about those concerns are made in this document. This phase ends at the boundary between Technical Feasibility and Architecture.
+The next phase is the MatterMind V1 synthetic vertical slice. No implementation is performed in this feasibility record.

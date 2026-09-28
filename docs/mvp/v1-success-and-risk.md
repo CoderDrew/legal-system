@@ -176,10 +176,10 @@ No quantitative success threshold, source boundary, or acceptable error rate is 
 
 The success framework defines what MatterMind must do well. The risk model defines what MatterMind must not do badly. Together, they guided technical feasibility and should constrain architecture decisions, retrieval and permissions design, evaluation dataset creation, evaluation metrics, model selection, human-review experience, testing priorities, and implementation planning.
 
-## Next phase: MatterMind V1 Architecture
+## Next phase: MatterMind V1 — Synthetic Vertical Slice
 
-The technical feasibility investigation is complete and recorded in [`v1-technical-feasibility.md`](./v1-technical-feasibility.md). Its checkpoint is **Proceed to Architecture**.
+The technical feasibility investigation is recorded in [`v1-technical-feasibility.md`](./v1-technical-feasibility.md), and Architecture Phase 1 is recorded in [`mattermind-v1-architecture.md`](../architecture/mattermind-v1-architecture.md).
 
-The feasibility work investigated whether Clio could serve as the trustworthy matter anchor, how Outlook evidence could be associated with a selected matter, and what authorization boundary V1 should preserve. It established constraints that the architecture must satisfy without selecting an architecture.
+Architecture Phase 1 is **complete enough to begin implementation**, but the architecture is not final. It preserves the product scope, success framework, risk hierarchy, provenance requirements, and authorization and matter-isolation boundaries established in this document and during feasibility.
 
-The next phase is MatterMind V1 Architecture. It should begin from the product scope, success framework, risk model, and requirements earned through feasibility rather than preferred technologies.
+The next phase is a synthetic vertical slice used to test these constraints and refine the architecture through implementation and evaluation findings.

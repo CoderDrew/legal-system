@@ -99,6 +99,6 @@ Read-only operation reduces action risk but does not make inaccuracies harmless.
 
 V1 success outcomes, evaluation principles, and the product risk model are defined in [`v1-success-and-risk.md`](./v1-success-and-risk.md).
 
-The technical feasibility investigation is complete and recorded in [`v1-technical-feasibility.md`](./v1-technical-feasibility.md). Its checkpoint is **Proceed to Architecture**.
+The technical feasibility investigation is complete and recorded in [`v1-technical-feasibility.md`](./v1-technical-feasibility.md). Architecture Phase 1 is recorded in [`mattermind-v1-architecture.md`](../architecture/mattermind-v1-architecture.md).
 
-The next phase is MatterMind V1 Architecture. It must begin from the established product scope, success outcomes, risk model, and requirements earned through feasibility rather than from preferred technologies.
+The architecture checkpoint is **Complete enough to begin implementation**. The next phase is the MatterMind V1 synthetic vertical slice; the selected MVP scope remains unchanged.
