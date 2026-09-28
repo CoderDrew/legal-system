@@ -160,7 +160,7 @@ This is the distinction between document summarization and operational-state rec
 
 ### Assumptions requiring validation
 
-The assumptions listed in [`mvp-selection.md`](./mvp-selection.md) remain open, including source sufficiency, reliable matter association, enforceable permission boundaries, reviewer agreement, user trust, bounded-scope usefulness, and realized time or capacity value.
+The assumptions listed in [`mvp-selection.md`](./mvp-selection.md) remain validation targets. Technical feasibility partially supports matter association and permission feasibility while leaving source sufficiency unresolved; it does not prove any of them in operation. Reviewer agreement, user trust, bounded-scope usefulness, and realized time or capacity value also remain unproven. See [`v1-technical-feasibility.md`](./v1-technical-feasibility.md#impact-on-the-assumptions-register).
 
 ### Future validation work
 
@@ -174,16 +174,12 @@ No quantitative success threshold, source boundary, or acceptable error rate is 
 
 ## Why this document matters
 
-The success framework defines what MatterMind must do well. The risk model defines what MatterMind must not do badly. Together, they establish product requirements that should constrain later technical feasibility investigation, architecture decisions, retrieval and permissions design, evaluation dataset creation, evaluation metrics, model selection, human-review experience, testing priorities, and implementation planning.
+The success framework defines what MatterMind must do well. The risk model defines what MatterMind must not do badly. Together, they guided technical feasibility and should constrain architecture decisions, retrieval and permissions design, evaluation dataset creation, evaluation metrics, model selection, human-review experience, testing priorities, and implementation planning.
 
-## Next phase: Technical feasibility investigation
+## Next phase: MatterMind V1 Architecture
 
-The project has completed enough product definition to begin technical feasibility investigation. That investigation is not performed in this document.
+The technical feasibility investigation is complete and recorded in [`v1-technical-feasibility.md`](./v1-technical-feasibility.md). Its checkpoint is **Proceed to Architecture**.
 
-The initial focus is:
+The feasibility work investigated whether Clio could serve as the trustworthy matter anchor, how Outlook evidence could be associated with a selected matter, and what authorization boundary V1 should preserve. It established constraints that the architecture must satisfy without selecting an architecture.
 
-> Can Clio provide the identity, context, relationships, data access, and permission boundaries needed to serve as MatterMind's trustworthy matter anchor?
-
-Subsequent investigation will examine how external evidence such as email and attachments can be reliably associated with that matter.
-
-Architecture should follow feasibility findings rather than precede them.
+The next phase is MatterMind V1 Architecture. It should begin from the product scope, success framework, risk model, and requirements earned through feasibility rather than preferred technologies.

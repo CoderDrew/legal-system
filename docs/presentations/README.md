@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This presentation shows how MatterMind stakeholder discovery led to a defensible MVP product decision. It explains why active-matter status reconstruction was selected, what V1 includes and excludes, and which assumptions must be validated before architecture or implementation begins.
+This presentation shows how MatterMind stakeholder discovery led to a defensible MVP product decision. It explains why active-matter status reconstruction was selected, what V1 includes and excludes, and which assumptions subsequent feasibility and validation work must address. It is retained as a record of the product-decision phase.
 
 The deck is a product strategy and MVP scope artifact. It does not define a technical architecture, select an AI provider, or commit to specific integration or retrieval technologies.
 

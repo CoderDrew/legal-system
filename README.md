@@ -4,19 +4,20 @@ MatterMind is a simulated professional AI product-engineering engagement based o
 
 All organizations, people, clients, matters, documents, and business data used in this repository must be fictional and synthetic.
 
-## Current phase: Technical feasibility investigation
+## Current phase: MatterMind V1 Architecture
 
-Discovery and MVP selection have established MatterMind V1 as a read-only, evidence-grounded active-matter status reconstruction tool. The current phase investigates whether Clio can provide a trustworthy matter anchor, including the identity, context, relationships, data access, and permission boundaries the product requires.
+Discovery, MVP selection, success and risk definition, and technical feasibility investigation have established the constraints for MatterMind V1. The feasibility checkpoint is **Proceed to Architecture**; V1 appears technically plausible, but important product assumptions remain to be tested during implementation and evaluation.
 
-Architecture and implementation choices remain intentionally open until feasibility findings justify them.
+The architecture phase starts from requirements earned through discovery and feasibility rather than preferred technologies. No implementation technology has been selected.
 
 ## Repository structure
 
 - `docs/discovery/` — meeting records, the discovery log, and unresolved questions
 - `docs/mvp/mvp-selection.md` — the selected V1 product scope and boundaries
 - `docs/mvp/v1-success-and-risk.md` — V1 success outcomes, evaluation principles, and risk model
+- `docs/mvp/v1-technical-feasibility.md` — completed feasibility spikes, findings, constraints, and remaining uncertainties
 - `docs/presentations/` — presentation artifacts derived from product discovery and decisions
-- `source/` — reserved for future source material; currently empty
+- `source/` — original source material
 - `discovery/` — reserved for future discovery working materials; currently empty
 
 ## Evidence labels

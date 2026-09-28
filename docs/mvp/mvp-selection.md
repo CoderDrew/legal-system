@@ -39,7 +39,7 @@ For one selected matter, V1 should produce a fixed current-state brief containin
 - Explicit unknown or insufficient-evidence states.
 - The freshness or time boundary of the reviewed information.
 
-The exact source boundary is not yet final. A working candidate is Clio plus a defined set of matter-related email and attachments over a defined period, subject to feasibility investigation.
+The exact source boundary is not yet final. Technical feasibility refined the working hypothesis to the selected Clio matter and its deterministically associated Clio evidence, plus matter-relevant Outlook email and attachments within the requesting user's authorized Microsoft 365 evidence scope. This remains a hypothesis to validate, not a proven-sufficient boundary. See [`v1-technical-feasibility.md`](./v1-technical-feasibility.md#refined-v1-source-boundary-hypothesis).
 
 ## Explicit exclusions
 
@@ -81,9 +81,9 @@ Read-only operation reduces action risk but does not make inaccuracies harmless.
 ## Assumptions to validate before implementation
 
 1. **Pain:** Matter reconstruction happens often enough and consumes enough professional time to justify intervention.
-2. **Source sufficiency:** A bounded source set contains enough evidence to produce a useful current-state brief.
-3. **Matter association:** Emails, attachments, and records can be associated with the correct matter reliably enough.
-4. **Permissions:** Authorized users can retrieve the necessary material without crossing matter or user access boundaries.
+2. **Source sufficiency — unresolved (A3):** A bounded source set contains enough evidence to produce a useful current-state brief. Feasibility established retrievability, not consistent sufficiency; realistic cases must test this assumption.
+3. **Matter association — partially supported (A4):** Clio-native evidence can use authoritative matter relationships. Email and attachment association remains a significant product and technical challenge.
+4. **Permissions — partially supported (A10):** Source-system authorization mechanisms can support least privilege, but authorization boundaries can reduce evidence completeness. Authorization and completeness must be evaluated separately.
 5. **Evaluation:** A qualified reviewer can determine whether a brief is correct, complete, current, and supported.
 6. **Trust:** Inspectable evidence and explicit uncertainty increase willingness to use the result.
 7. **Scope:** A single matter and limited time window are useful without requiring firm-wide search or complete historical reconstruction.
@@ -99,4 +99,6 @@ Read-only operation reduces action risk but does not make inaccuracies harmless.
 
 V1 success outcomes, evaluation principles, and the product risk model are defined in [`v1-success-and-risk.md`](./v1-success-and-risk.md).
 
-The next phase is technical feasibility investigation, beginning with whether Clio can provide the identity, context, relationships, data access, and permission boundaries required to serve as MatterMind's trustworthy matter anchor. Architecture should follow feasibility findings rather than precede them.
+The technical feasibility investigation is complete and recorded in [`v1-technical-feasibility.md`](./v1-technical-feasibility.md). Its checkpoint is **Proceed to Architecture**.
+
+The next phase is MatterMind V1 Architecture. It must begin from the established product scope, success outcomes, risk model, and requirements earned through feasibility rather than from preferred technologies.
