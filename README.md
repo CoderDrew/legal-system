@@ -12,7 +12,29 @@ Architecture Phase 1 is **complete enough to begin implementation**. The archite
 
 The [MatterMind V1 architecture](docs/architecture/mattermind-v1-architecture.md) defines the system responsibilities, request lifecycle, conceptual domain objects, provenance flow, authorization and matter-isolation invariant, reasoning pipeline, synthetic-first strategy, and open architecture questions.
 
-No implementation technology has been selected. V1 remains a read-only, bounded evidence-processing pipeline rather than an autonomous agent.
+The synthetic vertical slice uses Next.js, TypeScript, and Tailwind CSS. Production architecture and infrastructure choices remain open. V1 remains a read-only, bounded evidence-processing pipeline rather than an autonomous agent.
+
+## Run locally
+
+The first browser-based increment uses a synthetic evidence dataset and requires no external integrations.
+
+The current increment applies a deterministic evidence boundary before reconstruction: it filters the synthetic artifact universe by explicit user authorization, evaluates matter association using authoritative or explicit identifiers, excludes ambiguous and unrelated artifacts, and chronologically orders the eligible evidence set. Status claims remain predefined; no AI reasoning is implemented.
+
+```bash
+npm install
+npm run dev
+```
+
+Then open `http://localhost:3000`.
+
+Run the verification suite with:
+
+```bash
+npm run lint
+npm run typecheck
+npm test
+npm run build
+```
 
 ## Repository structure
 
