@@ -6,6 +6,13 @@ All organizations, people, clients, matters, documents, and business data used i
 
 Within that engagement, MatterMind V1 is testing whether a read-only product can help an authorized user understand the operational status of one selected legal matter faster, while keeping every material assertion traceable to inspectable evidence and preserving uncertainty when the evidence is insufficient.
 
+## Project tracks
+
+| Track | Status | Record |
+| --- | --- | --- |
+| Active-matter status brief | **Approved V1.** Read-only active-matter status reconstruction. The synthetic vertical slice is in progress. | [`mvp-selection.md`](docs/mvp/mvp-selection.md), [architecture](docs/architecture/mattermind-v1-architecture.md) |
+| Prospective-client intake | **Discovery track. Not approved for implementation.** Parked on Oct 2, 2026 (option (c)) as discovery evidence. No intake code exists or is to be built. | [`docs/discovery/intake-track/`](docs/discovery/intake-track/README.md) |
+
 ## Current phase: MatterMind V1 — Synthetic Vertical Slice
 
 Architecture Phase 1 is complete, and the Synthetic Vertical Slice is in progress. The current implementation reaches deterministic operational-event extraction. It does not yet reconstruct current state from those events.

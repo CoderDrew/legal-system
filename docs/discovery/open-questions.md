@@ -28,3 +28,11 @@ These questions identify gaps in the current discovery evidence. They are not re
 - **OPEN QUESTION:** Which Microsoft 365 and Outlook tools are used in those activities, by whom, and for what purposes?
 - **OPEN QUESTION:** How and when is information created outside Clio reflected in Clio, if at all?
 - **OPEN QUESTION:** How does the firm currently determine which record is authoritative when information appears in more than one place?
+
+## Intake discovery track (parked)
+
+Intake is parked as a discovery track and is not approved for implementation. Answering these questions does not approve intake work. See [`intake-track/README.md`](./intake-track/README.md).
+
+- Intake open questions by interview and decisions needed from Drew: [proposal §5](./intake-track/intake-v1-proposal-parked.md#5-open-questions).
+- Workflow gaps G1–G17: [`workflow-reconstruction.md`](./intake-track/workflow-reconstruction.md#gap-open-question-no-source).
+- Reopening thresholds, interview questions, and Clio/Grow capabilities to verify: [`reopening-research-plan.md`](./intake-track/reopening-research-plan.md).
