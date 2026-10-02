@@ -387,6 +387,8 @@ Operational Events
 
 Before implementing that boundary, the next increment should define explicit event-history-to-current-state ground truth for superseded, unresolved, conflicting, and unknown scenarios. This checkpoint does not select an algorithm or schema for that work.
 
+**Current checkpoint:** Current-state ground truth is defined for Smith v. Acme (matter-2026-0142). The fixture specifies expected current-state conclusions for each brief slot, including superseded, unresolved (SUPPORTED and INFERRED), and unknown evidence states. The waiting-on-opposing-counsel event is superseded by the opposing-counsel document-sent event. Reasoning to produce those conclusions from events is not implemented.
+
 ### Capabilities not implemented in the current vertical slice
 
 - AI or model integration.

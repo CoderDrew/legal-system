@@ -145,3 +145,18 @@ export type MatterStatusBrief = {
   claims: StatusClaim[];
   retrievalScope: RetrievalScope;
 };
+
+export type CurrentStateExpectation = {
+  slotId: string;
+  expectedState: EvidenceState;
+  expectedValue: string | null;
+  supportingEventIds: string[];
+  supersededEventIds: string[];
+  rationale: string;
+};
+
+export type CurrentStateGroundTruth = {
+  matterId: string;
+  asOf: string;
+  expectations: CurrentStateExpectation[];
+};
