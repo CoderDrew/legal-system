@@ -95,6 +95,13 @@ Read-only operation reduces action risk but does not make inaccuracies harmless.
 - **Reserved:** Prospective-client intake, pending stronger evidence of volume, pain, or cost.
 - **Deferred:** Deadlines and follow-up, pending better evidence about pain, volume, evaluation tolerance, and human-review controls.
 
+### Decision note: October 2, 2026
+
+- **CONSTRAINT:** Drew Reutlinger chose option (c) for the intake V1 proposal: park intake as discovery evidence. The selected V1 is unchanged: read-only active-matter status reconstruction (the Matter Status Brief).
+- Intake stays **Reserved**. It is a discovery track, not approved for implementation, and no intake code is to be built.
+- **OBSERVATION:** The intake proposal added no new volume, pain, or cost evidence.
+- The record, and the proposed criteria for reopening, are in [`docs/discovery/intake-track/`](../discovery/intake-track/README.md).
+
 ## Next step
 
 V1 success outcomes, evaluation principles, and the product risk model are defined in [`v1-success-and-risk.md`](./v1-success-and-risk.md).
