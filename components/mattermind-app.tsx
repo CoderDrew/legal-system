@@ -118,12 +118,12 @@ export function MatterMindApp() {
               {isGenerated ? (
                 <>
                   <DocumentIcon className="h-4.5 w-4.5" />
-                  Status Brief Generated
+                  Sample Brief Shown
                 </>
               ) : (
                 <>
-                  <SparkIcon className="h-4.5 w-4.5" />
-                  Generate Status Brief
+                  <DocumentIcon className="h-4.5 w-4.5" />
+                  Show Sample Status Brief
                   <ArrowRightIcon className="h-4.5 w-4.5" />
                 </>
               )}
@@ -147,12 +147,12 @@ export function MatterMindApp() {
                   <DocumentIcon className="h-6 w-6" />
                 </span>
                 <h2 className="mt-5 text-lg font-semibold text-slate-950">
-                  No status brief generated
+                  No status brief shown
                 </h2>
                 <p className="mt-2 text-sm leading-6 text-slate-600">
-                  MatterMind reconstructs the current operational state of the
-                  selected matter from authorized evidence. Generate the brief to
-                  review claims, evidence states, and source provenance.
+                  This increment displays a predefined synthetic status brief
+                  for demonstration purposes. The brief is not generated from events.
+                  Show the brief to review claims, evidence states, and source provenance.
                 </p>
               </div>
             </section>

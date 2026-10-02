@@ -110,7 +110,7 @@ test("every event preserves the eligible artifact's provenance", () => {
     sourceRecordedAt: "2026-09-16T14:20:00Z",
     associationMethod: "EXPLICIT_MATTER_ID",
     evidenceExcerpt:
-      "Attached is the revised settlement language incorporating the changes discussed yesterday. Please review with your client and let us know whether the revisions are acceptable.",
+      "Attached is the revised settlement language incorporating the changes discussed yesterday.",
   });
   assert.equal(
     revisedLanguageEvent.extractionMethod,
@@ -136,7 +136,7 @@ test("the complete extracted event history matches independent ground truth", ()
         sourceRecordedAt: "2026-09-10T15:30:00Z",
         associationMethod: "EXPLICIT_MATTER_NUMBER",
         evidenceExcerpt:
-          "The settlement conference remains scheduled for next month. I will send preparation details separately.",
+          "The settlement conference remains scheduled for next month.",
       },
     },
     {
@@ -155,7 +155,7 @@ test("the complete extracted event history matches independent ground truth", ()
         sourceRecordedAt: "2026-09-12T16:15:00Z",
         associationMethod: "EXPLICIT_MATTER_ID",
         evidenceExcerpt:
-          "We are waiting for opposing counsel to send the revised settlement language.",
+          "waiting for opposing counsel to send the revised settlement language",
       },
     },
     {
@@ -173,7 +173,7 @@ test("the complete extracted event history matches independent ground truth", ()
         sourceRecordedAt: "2026-09-16T14:20:00Z",
         associationMethod: "EXPLICIT_MATTER_ID",
         evidenceExcerpt:
-          "Attached is the revised settlement language incorporating the changes discussed yesterday. Please review with your client and let us know whether the revisions are acceptable.",
+          "Attached is the revised settlement language incorporating the changes discussed yesterday.",
       },
     },
     {
@@ -190,8 +190,7 @@ test("the complete extracted event history matches independent ground truth", ()
         sourceSystem: "Clio",
         sourceRecordedAt: "2026-09-17T09:00:00Z",
         associationMethod: "AUTHORITATIVE_SOURCE_RELATIONSHIP",
-        evidenceExcerpt:
-          "Matter status: Active\nResponsible attorney: David Chen\nClient: Jordan Smith",
+        evidenceExcerpt: "Matter status: Active",
       },
     },
     {
@@ -208,8 +207,7 @@ test("the complete extracted event history matches independent ground truth", ()
         sourceSystem: "Clio",
         sourceRecordedAt: "2026-09-17T09:00:00Z",
         associationMethod: "AUTHORITATIVE_SOURCE_RELATIONSHIP",
-        evidenceExcerpt:
-          "Matter status: Active\nResponsible attorney: David Chen\nClient: Jordan Smith",
+        evidenceExcerpt: "Responsible attorney: David Chen",
       },
     },
     {
@@ -226,8 +224,7 @@ test("the complete extracted event history matches independent ground truth", ()
         sourceSystem: "Outlook",
         sourceRecordedAt: "2026-09-17T17:45:00Z",
         associationMethod: "EXPLICIT_MATTER_ID",
-        evidenceExcerpt:
-          "Jordan, opposing counsel sent revised settlement language yesterday. I reviewed the changes and would like your approval before I respond. Please let me know whether you are comfortable accepting these revisions.",
+        evidenceExcerpt: "would like your approval before I respond",
       },
     },
     {
@@ -244,11 +241,30 @@ test("the complete extracted event history matches independent ground truth", ()
         sourceSystem: "Outlook",
         sourceRecordedAt: "2026-09-17T17:45:00Z",
         associationMethod: "EXPLICIT_MATTER_ID",
-        evidenceExcerpt:
-          "Jordan, opposing counsel sent revised settlement language yesterday. I reviewed the changes and would like your approval before I respond. Please let me know whether you are comfortable accepting these revisions.",
+        evidenceExcerpt: "I reviewed the changes",
       },
     },
   ]);
+});
+
+test("evidence excerpts are verbatim substrings shorter than artifact content", () => {
+  const events = extract();
+
+  for (const event of events) {
+    const artifact = evidenceProcessing.eligibleEvidence.find(
+      (item) => item.id === event.provenance.sourceArtifactId,
+    );
+
+    assert.ok(artifact, `Artifact ${event.provenance.sourceArtifactId} exists`);
+    assert.ok(
+      artifact.content.includes(event.provenance.evidenceExcerpt),
+      `Excerpt "${event.provenance.evidenceExcerpt}" is a substring of artifact ${artifact.id}`,
+    );
+    assert.ok(
+      event.provenance.evidenceExcerpt.length < artifact.content.length,
+      `Excerpt for event ${event.eventId} is shorter than full content`,
+    );
+  }
 });
 
 test("event drafts for another matter are rejected at extraction", () => {
@@ -322,6 +338,7 @@ test("event ID ordering is independent of the runtime locale", () => {
         actor: null,
         action: "Second by code-point order.",
         object: null,
+        evidenceExcerpt: "The settlement conference remains scheduled",
       },
       {
         eventId: "event-z",
@@ -331,6 +348,7 @@ test("event ID ordering is independent of the runtime locale", () => {
         actor: null,
         action: "First by code-point order.",
         object: null,
+        evidenceExcerpt: "The settlement conference remains scheduled",
       },
     ],
   };

@@ -209,6 +209,8 @@ export const syntheticOperationalEventGroundTruth: OperationalEventGroundTruth =
       action:
         "Reported that the settlement conference remained scheduled for next month.",
       object: "Settlement conference",
+      evidenceExcerpt:
+        "The settlement conference remains scheduled for next month.",
     },
   ],
   "email-0142-waiting-on-counsel": [
@@ -221,6 +223,7 @@ export const syntheticOperationalEventGroundTruth: OperationalEventGroundTruth =
       action:
         "Reported that the matter team was waiting for opposing counsel to send revised settlement language.",
       object: "Revised settlement language",
+      evidenceExcerpt: "waiting for opposing counsel to send the revised settlement language",
     },
   ],
   "email-0142-revised-language": [
@@ -232,6 +235,8 @@ export const syntheticOperationalEventGroundTruth: OperationalEventGroundTruth =
       actor: "Opposing counsel",
       action: "Sent revised settlement language to the matter team.",
       object: "Revised settlement language",
+      evidenceExcerpt:
+        "Attached is the revised settlement language incorporating the changes discussed yesterday.",
     },
   ],
   "attachment-0142-revised-agreement": [],
@@ -244,6 +249,7 @@ export const syntheticOperationalEventGroundTruth: OperationalEventGroundTruth =
       actor: null,
       action: "Recorded the matter status as Active.",
       object: "Matter status",
+      evidenceExcerpt: "Matter status: Active",
     },
     {
       eventId: "clio-matter-0142:responsibility-recorded",
@@ -253,6 +259,7 @@ export const syntheticOperationalEventGroundTruth: OperationalEventGroundTruth =
       actor: null,
       action: "Recorded David Chen as the responsible attorney.",
       object: "Responsible attorney",
+      evidenceExcerpt: "Responsible attorney: David Chen",
     },
   ],
   "email-0142-client-approval": [
@@ -264,6 +271,7 @@ export const syntheticOperationalEventGroundTruth: OperationalEventGroundTruth =
       actor: "Rachel Morgan",
       action: "Reported reviewing the revised settlement language.",
       object: "Revised settlement language",
+      evidenceExcerpt: "I reviewed the changes",
     },
     {
       eventId: "email-0142-client-approval:approval-requested",
@@ -273,6 +281,7 @@ export const syntheticOperationalEventGroundTruth: OperationalEventGroundTruth =
       actor: "Rachel Morgan",
       action: "Requested Jordan Smith's approval before responding.",
       object: "Revised settlement language",
+      evidenceExcerpt: "would like your approval before I respond",
     },
   ],
 };

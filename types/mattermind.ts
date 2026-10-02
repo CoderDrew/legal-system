@@ -103,6 +103,7 @@ export type OperationalEventDraft = {
   actor: string | null;
   action: string;
   object: string | null;
+  evidenceExcerpt: string;
 };
 
 export type OperationalEventGroundTruth = Readonly<
