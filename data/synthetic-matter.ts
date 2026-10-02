@@ -1,5 +1,6 @@
 import type {
   MatterStatusBrief,
+  OperationalEventGroundTruth,
   SyntheticEvidenceItem,
   SyntheticMatter,
   SyntheticUser,
@@ -196,6 +197,85 @@ export const syntheticEvidenceUniverse: SyntheticEvidenceItem[] = [
     authorizedUserIds: ["user-rachel-morgan"],
   },
 ];
+
+export const syntheticOperationalEventGroundTruth: OperationalEventGroundTruth = {
+  "email-0142-scheduling": [
+    {
+      eventId: "email-0142-scheduling:schedule-status-reported",
+      matterId: "matter-2026-0142",
+      eventType: "SCHEDULE_STATUS_REPORTED",
+      occurredAt: null,
+      actor: "Rachel Morgan",
+      action:
+        "Reported that the settlement conference remained scheduled for next month.",
+      object: "Settlement conference",
+    },
+  ],
+  "email-0142-waiting-on-counsel": [
+    {
+      eventId: "email-0142-waiting-on-counsel:waiting-state-reported",
+      matterId: "matter-2026-0142",
+      eventType: "WAITING_STATE_REPORTED",
+      occurredAt: "2026-09-12T16:15:00Z",
+      actor: "Rachel Morgan",
+      action:
+        "Reported that the matter team was waiting for opposing counsel to send revised settlement language.",
+      object: "Revised settlement language",
+    },
+  ],
+  "email-0142-revised-language": [
+    {
+      eventId: "email-0142-revised-language:document-sent",
+      matterId: "matter-2026-0142",
+      eventType: "DOCUMENT_SENT",
+      occurredAt: "2026-09-16T14:20:00Z",
+      actor: "Opposing counsel",
+      action: "Sent revised settlement language to the matter team.",
+      object: "Revised settlement language",
+    },
+  ],
+  "attachment-0142-revised-agreement": [],
+  "clio-matter-0142": [
+    {
+      eventId: "clio-matter-0142:matter-status-recorded",
+      matterId: "matter-2026-0142",
+      eventType: "MATTER_STATUS_RECORDED",
+      occurredAt: "2026-09-17T09:00:00Z",
+      actor: null,
+      action: "Recorded the matter status as Active.",
+      object: "Matter status",
+    },
+    {
+      eventId: "clio-matter-0142:responsibility-recorded",
+      matterId: "matter-2026-0142",
+      eventType: "RESPONSIBILITY_RECORDED",
+      occurredAt: "2026-09-17T09:00:00Z",
+      actor: null,
+      action: "Recorded Rachel Morgan as the responsible attorney.",
+      object: "Responsible attorney",
+    },
+  ],
+  "email-0142-client-approval": [
+    {
+      eventId: "email-0142-client-approval:document-reviewed",
+      matterId: "matter-2026-0142",
+      eventType: "DOCUMENT_REVIEWED",
+      occurredAt: null,
+      actor: "Rachel Morgan",
+      action: "Reported reviewing the revised settlement language.",
+      object: "Revised settlement language",
+    },
+    {
+      eventId: "email-0142-client-approval:approval-requested",
+      matterId: "matter-2026-0142",
+      eventType: "APPROVAL_REQUESTED",
+      occurredAt: "2026-09-17T17:45:00Z",
+      actor: "Rachel Morgan",
+      action: "Requested Jordan Smith's approval before responding.",
+      object: "Revised settlement language",
+    },
+  ],
+};
 
 export const syntheticMatterBrief: MatterStatusBrief = {
   matter: syntheticMatters[0],

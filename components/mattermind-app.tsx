@@ -4,9 +4,11 @@ import { useCallback, useState } from "react";
 import {
   syntheticEvidenceUniverse,
   syntheticMatterBrief,
+  syntheticOperationalEventGroundTruth,
   syntheticRequestingUser,
 } from "@/data/synthetic-matter";
 import { buildEligibleEvidenceSet } from "@/lib/evidence-processing";
+import { extractOperationalEvents } from "@/lib/operational-events";
 import { EvidencePanel } from "@/components/evidence-panel";
 import { StatusBrief } from "@/components/status-brief";
 import { ArrowRightIcon, DocumentIcon, LockIcon, SparkIcon } from "@/components/icons";
@@ -15,6 +17,12 @@ const evidenceProcessing = buildEligibleEvidenceSet({
   user: syntheticRequestingUser,
   selectedMatter: syntheticMatterBrief.matter,
   evidenceUniverse: syntheticEvidenceUniverse,
+});
+
+const operationalEvents = extractOperationalEvents({
+  eligibleEvidence: evidenceProcessing.eligibleEvidence,
+  groundTruth: syntheticOperationalEventGroundTruth,
+  matterId: syntheticMatterBrief.matter.id,
 });
 
 export function MatterMindApp() {
@@ -129,6 +137,7 @@ export function MatterMindApp() {
               brief={syntheticMatterBrief}
               eligibleEvidence={evidenceProcessing.eligibleEvidence}
               onInspectEvidence={setSelectedEvidenceIds}
+              operationalEvents={operationalEvents}
               processingCounts={evidenceProcessing.counts}
             />
           ) : (

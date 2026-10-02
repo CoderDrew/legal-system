@@ -2,6 +2,7 @@ import type {
   EligibleEvidenceItem,
   EvidenceProcessingCounts,
   MatterStatusBrief,
+  OperationalEvent,
 } from "@/types/mattermind";
 import { EvidenceStateBadge } from "@/components/evidence-state-badge";
 import { CheckIcon, EvidenceIcon, LockIcon } from "@/components/icons";
@@ -9,6 +10,7 @@ import { CheckIcon, EvidenceIcon, LockIcon } from "@/components/icons";
 type StatusBriefProps = {
   brief: MatterStatusBrief;
   eligibleEvidence: EligibleEvidenceItem[];
+  operationalEvents: OperationalEvent[];
   processingCounts: EvidenceProcessingCounts;
   onInspectEvidence: (evidenceIds: string[]) => void;
 };
@@ -16,6 +18,7 @@ type StatusBriefProps = {
 export function StatusBrief({
   brief,
   eligibleEvidence,
+  operationalEvents,
   processingCounts,
   onInspectEvidence,
 }: StatusBriefProps) {
@@ -181,8 +184,8 @@ export function StatusBrief({
               Evidence Processing
             </h3>
             <p className="mt-1 text-xs leading-5 text-slate-500">
-              Development view of the deterministic authorization and association
-              boundary.
+              Development view of the deterministic authorization, association,
+              and operational-event extraction boundary.
             </p>
           </div>
           <span className="text-xs font-semibold text-teal-800 group-open:hidden">
@@ -193,13 +196,14 @@ export function StatusBrief({
           </span>
         </summary>
         <div className="border-t border-slate-200 px-5 py-5 sm:px-6">
-          <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
             {[
               ["Total synthetic artifacts", processingCounts.total],
               ["Authorized artifacts", processingCounts.authorized],
               ["Associated artifacts", processingCounts.associated],
               ["Ambiguous artifacts", processingCounts.ambiguous],
               ["Eligible evidence artifacts", processingCounts.eligible],
+              ["Extracted operational events", operationalEvents.length],
             ].map(([label, value]) => (
               <div className="rounded-lg bg-slate-50 p-4" key={label}>
                 <dt className="text-xs leading-5 font-medium text-slate-500">
@@ -213,10 +217,49 @@ export function StatusBrief({
           </dl>
           <p className="mt-4 text-xs leading-5 text-slate-500">
             Only the {eligibleEvidence.length} authorized and deterministically
-            associated artifacts are available in the evidence drawer. Ambiguous
-            evidence is retained by the processing result but excluded from
-            reconstruction.
+            associated artifacts can reach event extraction. Ambiguous evidence is
+            retained by the processing result but excluded from extraction.
           </p>
+          <div className="mt-5 border-t border-slate-200 pt-5">
+            <h4 className="text-xs font-bold tracking-[0.12em] text-slate-500 uppercase">
+              Extracted events
+            </h4>
+            <p className="mt-1 text-xs leading-5 text-slate-500">
+              Historical records only. No current-state or supersession conclusion
+              is produced in this increment.
+            </p>
+            <ol className="mt-3 space-y-2">
+              {operationalEvents.map((event) => (
+                <li
+                  className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3"
+                  key={event.eventId}
+                >
+                  <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between sm:gap-4">
+                    <p className="text-sm font-medium text-slate-900">
+                      {event.action}
+                    </p>
+                    <p className="shrink-0 text-xs font-semibold text-teal-800">
+                      {event.eventType.replaceAll("_", " ")}
+                    </p>
+                  </div>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Source: {event.provenance.sourceArtifactId} · Recorded{" "}
+                    {new Date(
+                      event.provenance.sourceRecordedAt,
+                    ).toLocaleString("en-US", {
+                      month: "short",
+                      day: "numeric",
+                      year: "numeric",
+                      hour: "numeric",
+                      minute: "2-digit",
+                      timeZone: "UTC",
+                      timeZoneName: "short",
+                    })}
+                  </p>
+                </li>
+              ))}
+            </ol>
+          </div>
         </div>
       </details>
     </div>

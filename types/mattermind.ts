@@ -86,6 +86,40 @@ export type EvidenceProcessingResult = {
   counts: EvidenceProcessingCounts;
 };
 
+export type OperationalEventType =
+  | "SCHEDULE_STATUS_REPORTED"
+  | "WAITING_STATE_REPORTED"
+  | "DOCUMENT_SENT"
+  | "MATTER_STATUS_RECORDED"
+  | "RESPONSIBILITY_RECORDED"
+  | "DOCUMENT_REVIEWED"
+  | "APPROVAL_REQUESTED";
+
+export type OperationalEventDraft = {
+  eventId: string;
+  matterId: string;
+  eventType: OperationalEventType;
+  occurredAt: string | null;
+  actor: string | null;
+  action: string;
+  object: string | null;
+};
+
+export type OperationalEventGroundTruth = Readonly<
+  Record<string, readonly OperationalEventDraft[]>
+>;
+
+export type OperationalEvent = OperationalEventDraft & {
+  extractionMethod: "SYNTHETIC_GROUND_TRUTH";
+  provenance: {
+    sourceArtifactId: string;
+    sourceSystem: SourceSystem;
+    sourceRecordedAt: string;
+    associationMethod: AssociationMethod;
+    evidenceExcerpt: string;
+  };
+};
+
 export type StatusClaim = {
   id: string;
   label: string;

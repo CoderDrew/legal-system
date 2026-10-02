@@ -2,7 +2,7 @@
 
 ## Purpose and status
 
-This document records the first architecture-design pass for MatterMind V1.
+This document records the first architecture-design pass for MatterMind V1 and the current Synthetic Vertical Slice implementation checkpoint.
 
 **Architecture Phase 1 checkpoint: Complete enough to begin implementation.**
 
@@ -89,6 +89,8 @@ The user explicitly selects one matter. MatterMind must not ask AI to infer whic
 
 Determine which underlying source-system evidence the requesting user may access. Authorization occurs before relevance evaluation.
 
+This ordering is a security invariant, not an optimization. MatterMind must not inspect unauthorized content to decide whether it is relevant, and unauthorized artifacts must never reach association or event extraction.
+
 ### 3. Evidence Acquisition and Matter Association
 
 Retrieve candidate evidence from authorized V1 sources. Acquisition and matter association remain separate responsibilities: finding an Outlook email does not prove that it belongs to the selected matter.
@@ -104,6 +106,8 @@ Clio-native relationships may provide authoritative association. Outlook evidenc
 5. Content, entity, or context inference.
 
 Participant matches generate candidates; they do not necessarily prove matter membership. Ambiguous associations must be allowed to remain ambiguous.
+
+For the current vertical slice, **eligible evidence** is evidence that has passed both boundaries: the requesting user is authorized to access it, and a deterministic rule associates it with the selected matter. Ambiguous candidates are retained in the processing result for inspection but are not eligible and cannot reach operational-event extraction.
 
 ### 4. Evidence Normalization and Provenance
 
@@ -174,6 +178,7 @@ User explicitly selects matter
 → preserve association provenance
 → preserve retrieval-scope provenance
 → construct authorized matter evidence set
+→ extract operational events from eligible evidence
 → perform operational-state reconstruction
 → generate structured candidate claims
 → validate claim/evidence relationships
@@ -229,6 +234,19 @@ Represents a derived interpretation of something operationally meaningful that h
 
 One Evidence Item may produce multiple events, and multiple Evidence Items may support one event.
 
+An Operational Event represents what eligible evidence establishes happened or was recorded. It does **not** represent MatterMind's conclusion about what is currently true. Historical events remain valid even when later events eventually supersede their operational significance. Supersession and current-state determination operate on events in a later reasoning stage; they are not part of event extraction.
+
+The synthetic vertical slice implements a deliberately small event contract containing a deterministic identity, matter identity, event type, nullable occurrence time and actor, action, optional object, extraction method, and source provenance. Unknown occurrence times and actors remain null rather than being inferred.
+
+The event contract deliberately separates two timestamps:
+
+- **`occurredAt`:** When the underlying event is known to have happened. It remains null when the eligible evidence does not establish that time.
+- **Source-record timestamp:** When the source artifact was sent, created, or recorded. The current extractor uses this timestamp, followed by event identity, for deterministic ordering when actual event occurrence time is unavailable.
+
+These timestamps are not interchangeable. Treating the source-record timestamp as a known event time would manufacture temporal certainty that the evidence does not provide.
+
+Extraction records evidence-established history only. It does not reconcile duplicate descriptions, combine multiple artifacts into a current-state conclusion, decide that one event supersedes another, or discard an older event because its operational significance may later change.
+
 ### State Claim
 
 Represents something MatterMind believes may describe the current operational state, for example:
@@ -267,9 +285,11 @@ The structured user-facing result contains:
 
 The deadline field may report dates that appear in evidence. MatterMind V1 does not determine authoritative legal deadlines.
 
+In the current Synthetic Vertical Slice, the visible Matter Status Brief is predefined synthetic output. It is not assembled from the extracted Operational Event history. The full event-to-claim provenance chain remains an architectural target for later increments, not a claim about current behavior.
+
 ## Provenance flow
 
-The intended claim-provenance chain is:
+The intended full claim-provenance chain is:
 
 ```text
 Matter Status Brief
@@ -280,6 +300,16 @@ Matter Status Brief
 ```
 
 A user should ultimately be able to inspect the source evidence supporting a material claim.
+
+The currently implemented portion is:
+
+```text
+Operational Event
+→ Eligible Evidence Item
+→ Original synthetic Clio or Outlook artifact
+```
+
+Each extracted event carries its source artifact identity, source system, source-record timestamp, matter-association method, and evidence excerpt. This provenance is copied from the eligible evidence item during extraction rather than reconstructed later.
 
 Matter-association provenance must also be retained so MatterMind can explain why an external artifact was treated as evidence for the selected matter. Retrieval-scope provenance records what evidence universe was and was not available to the request.
 
@@ -323,6 +353,51 @@ Deterministic software should handle where practical:
 - Enforcement of V1 boundaries.
 
 The exact model calls and orchestration mechanism remain undecided.
+
+### Synthetic vertical-slice implementation checkpoint
+
+The implemented deterministic path now stops at operational-event extraction:
+
+```text
+Synthetic Artifacts
+→ Authorization
+→ Matter Association
+→ Eligibility
+→ Operational Event Extraction
+```
+
+Only eligible evidence enters extraction. The current synthetic extractor uses explicit ground-truth fixtures, supports zero, one, or multiple events per artifact, preserves association and source provenance, and orders output deterministically by the source record timestamp and event identity. It performs no event deduplication, historical-state supersession, or current-state determination.
+
+The current ground-truth case contains six eligible artifacts and seven extracted events:
+
+- Three eligible emails each produce one event.
+- Attachment metadata produces zero events because it establishes no additional operational occurrence.
+- The Clio matter record produces two recorded events.
+- The client-approval email produces two events.
+- Unknown event times and actors remain null.
+
+The extracted events remain immutable historical records. A later reasoning stage may determine that a newer event changes the operational significance of an older one, but that does not make the older event false or remove it from history.
+
+The next unimplemented boundary is:
+
+```text
+Operational Events
+→ Current-State and Supersession Reasoning
+```
+
+Before implementing that boundary, the next increment should define explicit event-history-to-current-state ground truth for superseded, unresolved, conflicting, and unknown scenarios. This checkpoint does not select an algorithm or schema for that work.
+
+### Capabilities not implemented in the current vertical slice
+
+- AI or model integration.
+- Current-state reasoning or Status Brief generation from events.
+- Supersession reasoning.
+- Event reconciliation or deduplication.
+- Real Clio integration.
+- Real Microsoft 365 integration.
+- Production authentication.
+- A production database or deployment infrastructure.
+- Legal deadline calculation or legal conclusions.
 
 ## Open architectural question: reasoning granularity
 
@@ -393,14 +468,16 @@ The following remain undecided:
 
 Technology selection should follow demonstrated requirements rather than precede them.
 
+None of the AI/model, integration, authentication, database, or production-infrastructure options above is implemented in the current Synthetic Vertical Slice.
+
 ## Architecture Phase 1 checkpoint
 
 **Complete enough to begin implementation.**
 
 This does not mean the architecture is final. The project has enough architectural definition to begin a synthetic vertical slice and use implementation and evaluation findings to refine the design.
 
-## Next phase: MatterMind V1 — Synthetic Vertical Slice
+## Current phase: MatterMind V1 — Synthetic Vertical Slice
 
-The next phase is a thin end-to-end implementation against synthetic data. It should test the architecture's boundaries and core product outcome without requiring live source-system integrations.
+The synthetic vertical slice is in progress against synthetic data. It tests the architecture's boundaries and core product outcome without requiring live source-system integrations.
 
-Implementation does not begin as part of this documentation handoff.
+The current implementation reaches deterministic operational-event extraction. Current-state and supersession reasoning remain future work.
