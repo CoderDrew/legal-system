@@ -191,7 +191,7 @@ test("the complete extracted event history matches independent ground truth", ()
         sourceRecordedAt: "2026-09-17T09:00:00Z",
         associationMethod: "AUTHORITATIVE_SOURCE_RELATIONSHIP",
         evidenceExcerpt:
-          "Matter status: Active\nResponsible attorney: Rachel Morgan\nClient: Jordan Smith",
+          "Matter status: Active\nResponsible attorney: David Chen\nClient: Jordan Smith",
       },
     },
     {
@@ -200,7 +200,7 @@ test("the complete extracted event history matches independent ground truth", ()
       eventType: "RESPONSIBILITY_RECORDED",
       occurredAt: "2026-09-17T09:00:00Z",
       actor: null,
-      action: "Recorded Rachel Morgan as the responsible attorney.",
+      action: "Recorded David Chen as the responsible attorney.",
       object: "Responsible attorney",
       extractionMethod: "SYNTHETIC_GROUND_TRUTH",
       provenance: {
@@ -209,7 +209,7 @@ test("the complete extracted event history matches independent ground truth", ()
         sourceRecordedAt: "2026-09-17T09:00:00Z",
         associationMethod: "AUTHORITATIVE_SOURCE_RELATIONSHIP",
         evidenceExcerpt:
-          "Matter status: Active\nResponsible attorney: Rachel Morgan\nClient: Jordan Smith",
+          "Matter status: Active\nResponsible attorney: David Chen\nClient: Jordan Smith",
       },
     },
     {

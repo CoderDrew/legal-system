@@ -12,7 +12,7 @@ export const syntheticMatters: SyntheticMatter[] = [
     matterNumber: "2026-0142",
     name: "Smith v. Acme",
     client: "Jordan Smith",
-    responsibleAttorney: "Rachel Morgan",
+    responsibleAttorney: "David Chen",
     status: "Active",
     participantIds: [
       "person-jordan-smith",
@@ -25,7 +25,7 @@ export const syntheticMatters: SyntheticMatter[] = [
     matterNumber: "2026-0159",
     name: "Smith Property Acquisition",
     client: "Jordan Smith",
-    responsibleAttorney: "Rachel Morgan",
+    responsibleAttorney: "David Chen",
     status: "Active",
     participantIds: [
       "person-jordan-smith",
@@ -48,7 +48,7 @@ export const syntheticEvidenceUniverse: SyntheticEvidenceItem[] = [
     artifactType: "Matter record",
     timestamp: "2026-09-17T09:00:00Z",
     content:
-      "Matter status: Active\nResponsible attorney: Rachel Morgan\nClient: Jordan Smith",
+      "Matter status: Active\nResponsible attorney: David Chen\nClient: Jordan Smith",
     explicitMatterId: "matter-2026-0142",
     explicitMatterNumber: "2026-0142",
     participants: ["person-jordan-smith", "user-rachel-morgan"],
@@ -60,7 +60,7 @@ export const syntheticEvidenceUniverse: SyntheticEvidenceItem[] = [
     artifactType: "Matter record",
     timestamp: "2026-09-17T09:05:00Z",
     content:
-      "Matter status: Active\nResponsible attorney: Rachel Morgan\nClient: Jordan Smith",
+      "Matter status: Active\nResponsible attorney: David Chen\nClient: Jordan Smith",
     explicitMatterId: "matter-2026-0159",
     explicitMatterNumber: "2026-0159",
     participants: ["person-jordan-smith", "user-rachel-morgan"],
@@ -251,7 +251,7 @@ export const syntheticOperationalEventGroundTruth: OperationalEventGroundTruth =
       eventType: "RESPONSIBILITY_RECORDED",
       occurredAt: "2026-09-17T09:00:00Z",
       actor: null,
-      action: "Recorded Rachel Morgan as the responsible attorney.",
+      action: "Recorded David Chen as the responsible attorney.",
       object: "Responsible attorney",
     },
   ],
@@ -315,7 +315,7 @@ export const syntheticMatterBrief: MatterStatusBrief = {
     {
       id: "owner",
       label: "Owner",
-      value: "Rachel Morgan",
+      value: "David Chen",
       state: "SUPPORTED",
       evidenceIds: ["clio-matter-0142"],
     },
