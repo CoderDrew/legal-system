@@ -48,7 +48,7 @@ export function StatusBrief({
             </div>
             <div className="flex items-center gap-2 text-xs text-slate-300">
               <CheckIcon className="h-4 w-4 text-teal-300" />
-              Read-only reconstruction
+              Predefined synthetic output
             </div>
           </div>
         </div>

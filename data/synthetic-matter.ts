@@ -12,7 +12,7 @@ export const syntheticMatters: SyntheticMatter[] = [
     matterNumber: "2026-0142",
     name: "Smith v. Acme",
     client: "Jordan Smith",
-    responsibleAttorney: "Rachel Morgan",
+    responsibleAttorney: "Alex Thompson",
     status: "Active",
     participantIds: [
       "person-jordan-smith",
@@ -25,7 +25,7 @@ export const syntheticMatters: SyntheticMatter[] = [
     matterNumber: "2026-0159",
     name: "Smith Property Acquisition",
     client: "Jordan Smith",
-    responsibleAttorney: "Rachel Morgan",
+    responsibleAttorney: "Alex Thompson",
     status: "Active",
     participantIds: [
       "person-jordan-smith",
@@ -48,7 +48,7 @@ export const syntheticEvidenceUniverse: SyntheticEvidenceItem[] = [
     artifactType: "Matter record",
     timestamp: "2026-09-17T09:00:00Z",
     content:
-      "Matter status: Active\nResponsible attorney: Rachel Morgan\nClient: Jordan Smith",
+      "Matter status: Active\nResponsible attorney: Alex Thompson\nClient: Jordan Smith",
     explicitMatterId: "matter-2026-0142",
     explicitMatterNumber: "2026-0142",
     participants: ["person-jordan-smith", "user-rachel-morgan"],
@@ -60,7 +60,7 @@ export const syntheticEvidenceUniverse: SyntheticEvidenceItem[] = [
     artifactType: "Matter record",
     timestamp: "2026-09-17T09:05:00Z",
     content:
-      "Matter status: Active\nResponsible attorney: Rachel Morgan\nClient: Jordan Smith",
+      "Matter status: Active\nResponsible attorney: Alex Thompson\nClient: Jordan Smith",
     explicitMatterId: "matter-2026-0159",
     explicitMatterNumber: "2026-0159",
     participants: ["person-jordan-smith", "user-rachel-morgan"],
@@ -133,8 +133,9 @@ export const syntheticEvidenceUniverse: SyntheticEvidenceItem[] = [
     sourceSystem: "Outlook",
     artifactType: "Email",
     timestamp: "2026-09-17T17:45:00Z",
-    from: "rachel.morgan@lawfirm.example",
+    from: "alex.thompson@lawfirm.example",
     to: ["jordan.smith@example.com"],
+    cc: ["rachel.morgan@lawfirm.example"],
     subject: "Smith v. Acme — Revised Settlement Agreement",
     content:
       "Jordan, opposing counsel sent revised settlement language yesterday. I reviewed the changes and would like your approval before I respond. Please let me know whether you are comfortable accepting these revisions.",
@@ -209,6 +210,8 @@ export const syntheticOperationalEventGroundTruth: OperationalEventGroundTruth =
       action:
         "Reported that the settlement conference remained scheduled for next month.",
       object: "Settlement conference",
+      evidenceExcerpt:
+        "The settlement conference remains scheduled for next month.",
     },
   ],
   "email-0142-waiting-on-counsel": [
@@ -221,6 +224,7 @@ export const syntheticOperationalEventGroundTruth: OperationalEventGroundTruth =
       action:
         "Reported that the matter team was waiting for opposing counsel to send revised settlement language.",
       object: "Revised settlement language",
+      evidenceExcerpt: "waiting for opposing counsel to send the revised settlement language",
     },
   ],
   "email-0142-revised-language": [
@@ -232,6 +236,8 @@ export const syntheticOperationalEventGroundTruth: OperationalEventGroundTruth =
       actor: "Opposing counsel",
       action: "Sent revised settlement language to the matter team.",
       object: "Revised settlement language",
+      evidenceExcerpt:
+        "Attached is the revised settlement language incorporating the changes discussed yesterday.",
     },
   ],
   "attachment-0142-revised-agreement": [],
@@ -244,6 +250,7 @@ export const syntheticOperationalEventGroundTruth: OperationalEventGroundTruth =
       actor: null,
       action: "Recorded the matter status as Active.",
       object: "Matter status",
+      evidenceExcerpt: "Matter status: Active",
     },
     {
       eventId: "clio-matter-0142:responsibility-recorded",
@@ -251,8 +258,9 @@ export const syntheticOperationalEventGroundTruth: OperationalEventGroundTruth =
       eventType: "RESPONSIBILITY_RECORDED",
       occurredAt: "2026-09-17T09:00:00Z",
       actor: null,
-      action: "Recorded Rachel Morgan as the responsible attorney.",
+      action: "Recorded Alex Thompson as the responsible attorney.",
       object: "Responsible attorney",
+      evidenceExcerpt: "Responsible attorney: Alex Thompson",
     },
   ],
   "email-0142-client-approval": [
@@ -261,18 +269,20 @@ export const syntheticOperationalEventGroundTruth: OperationalEventGroundTruth =
       matterId: "matter-2026-0142",
       eventType: "DOCUMENT_REVIEWED",
       occurredAt: null,
-      actor: "Rachel Morgan",
+      actor: "Alex Thompson",
       action: "Reported reviewing the revised settlement language.",
       object: "Revised settlement language",
+      evidenceExcerpt: "I reviewed the changes",
     },
     {
       eventId: "email-0142-client-approval:approval-requested",
       matterId: "matter-2026-0142",
       eventType: "APPROVAL_REQUESTED",
       occurredAt: "2026-09-17T17:45:00Z",
-      actor: "Rachel Morgan",
+      actor: "Alex Thompson",
       action: "Requested Jordan Smith's approval before responding.",
       object: "Revised settlement language",
+      evidenceExcerpt: "would like your approval before I respond",
     },
   ],
 };
@@ -315,7 +325,7 @@ export const syntheticMatterBrief: MatterStatusBrief = {
     {
       id: "owner",
       label: "Owner",
-      value: "Rachel Morgan",
+      value: "Alex Thompson",
       state: "SUPPORTED",
       evidenceIds: ["clio-matter-0142"],
     },

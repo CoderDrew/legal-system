@@ -3,6 +3,7 @@ import { readdirSync } from "node:fs";
 import test from "node:test";
 import "./evidence-processing.test";
 import "./operational-events.test";
+import "./current-state-ground-truth.test";
 
 test("the test entrypoint includes every test file", () => {
   const testFiles = readdirSync(import.meta.dirname)
@@ -10,6 +11,7 @@ test("the test entrypoint includes every test file", () => {
     .sort();
 
   assert.deepEqual(testFiles, [
+    "current-state-ground-truth.test.ts",
     "evidence-processing.test.ts",
     "operational-events.test.ts",
   ]);

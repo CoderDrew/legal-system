@@ -40,6 +40,7 @@ export type SyntheticEvidenceItem = {
   timestamp: string;
   from?: string;
   to?: string[];
+  cc?: string[];
   subject?: string;
   content: string;
   explicitMatterId?: string;
@@ -105,8 +106,12 @@ export type OperationalEventDraft = {
   object: string | null;
 };
 
+export type OperationalEventGroundTruthEntry = OperationalEventDraft & {
+  evidenceExcerpt: string;
+};
+
 export type OperationalEventGroundTruth = Readonly<
-  Record<string, readonly OperationalEventDraft[]>
+  Record<string, readonly OperationalEventGroundTruthEntry[]>
 >;
 
 export type OperationalEvent = OperationalEventDraft & {
@@ -139,4 +144,19 @@ export type MatterStatusBrief = {
   matter: SyntheticMatter;
   claims: StatusClaim[];
   retrievalScope: RetrievalScope;
+};
+
+export type CurrentStateExpectation = {
+  slotId: string;
+  expectedState: EvidenceState;
+  expectedValue: string | null;
+  supportingEventIds: string[];
+  supersededEventIds: string[];
+  rationale: string;
+};
+
+export type CurrentStateGroundTruth = {
+  matterId: string;
+  asOf: string;
+  expectations: CurrentStateExpectation[];
 };
