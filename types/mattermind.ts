@@ -40,6 +40,7 @@ export type SyntheticEvidenceItem = {
   timestamp: string;
   from?: string;
   to?: string[];
+  cc?: string[];
   subject?: string;
   content: string;
   explicitMatterId?: string;

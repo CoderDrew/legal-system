@@ -200,7 +200,7 @@ test("the complete extracted event history matches independent ground truth", ()
       eventType: "RESPONSIBILITY_RECORDED",
       occurredAt: "2026-09-17T09:00:00Z",
       actor: null,
-      action: "Recorded Rachel Morgan as the responsible attorney.",
+      action: "Recorded Alex Thompson as the responsible attorney.",
       object: "Responsible attorney",
       extractionMethod: "SYNTHETIC_GROUND_TRUTH",
       provenance: {
@@ -209,7 +209,7 @@ test("the complete extracted event history matches independent ground truth", ()
         sourceRecordedAt: "2026-09-17T09:00:00Z",
         associationMethod: "AUTHORITATIVE_SOURCE_RELATIONSHIP",
         evidenceExcerpt:
-          "Matter status: Active\nResponsible attorney: Rachel Morgan\nClient: Jordan Smith",
+          "Matter status: Active\nResponsible attorney: Alex Thompson\nClient: Jordan Smith",
       },
     },
     {
@@ -217,7 +217,7 @@ test("the complete extracted event history matches independent ground truth", ()
       matterId: "matter-2026-0142",
       eventType: "APPROVAL_REQUESTED",
       occurredAt: "2026-09-17T17:45:00Z",
-      actor: "Rachel Morgan",
+      actor: "Alex Thompson",
       action: "Requested Jordan Smith's approval before responding.",
       object: "Revised settlement language",
       extractionMethod: "SYNTHETIC_GROUND_TRUTH",
@@ -235,7 +235,7 @@ test("the complete extracted event history matches independent ground truth", ()
       matterId: "matter-2026-0142",
       eventType: "DOCUMENT_REVIEWED",
       occurredAt: null,
-      actor: "Rachel Morgan",
+      actor: "Alex Thompson",
       action: "Reported reviewing the revised settlement language.",
       object: "Revised settlement language",
       extractionMethod: "SYNTHETIC_GROUND_TRUTH",
