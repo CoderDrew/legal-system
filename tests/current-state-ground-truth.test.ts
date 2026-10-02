@@ -200,6 +200,9 @@ test("predefined brief claims match ground-truth expectations (drift check)", ()
     ]),
   );
 
+  // Fixed display text for UNKNOWN state with null data value
+  const UNKNOWN_DISPLAY_VALUE = "Unknown";
+
   for (const claim of syntheticMatterBrief.claims) {
     const expectation = groundTruth.expectations.find(
       (exp) => exp.slotId === claim.id,
@@ -215,11 +218,11 @@ test("predefined brief claims match ground-truth expectations (drift check)", ()
       `Claim ${claim.id} state matches ground truth`,
     );
 
-    // For UNKNOWN state with null expectedValue, the brief shows display text
-    // (e.g. "Unknown"). Map null (data) to the brief's actual display value.
+    // For UNKNOWN state with null expectedValue, map to the fixed display text
+    // that the brief should show. This prevents tautological self-comparison.
     const expectedClaimValue =
       expectation.expectedState === "UNKNOWN" && expectation.expectedValue === null
-        ? claim.value
+        ? UNKNOWN_DISPLAY_VALUE
         : expectation.expectedValue;
 
     assert.equal(
