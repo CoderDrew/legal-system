@@ -83,6 +83,7 @@ test("only eligible evidence can produce operational events", () => {
         actor: "Private partner",
         action: "This event must remain outside the extraction boundary.",
         object: "Private management discussion",
+        evidenceExcerpt: "Private management discussion",
       },
     ],
   };
@@ -278,6 +279,7 @@ test("event drafts for another matter are rejected at extraction", () => {
         actor: "Rachel Morgan",
         action: "This event belongs to another matter.",
         object: "Settlement conference",
+        evidenceExcerpt: "This event belongs to another matter",
       },
     ],
   };

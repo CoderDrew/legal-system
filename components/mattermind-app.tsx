@@ -11,7 +11,7 @@ import { buildEligibleEvidenceSet } from "@/lib/evidence-processing";
 import { extractOperationalEvents } from "@/lib/operational-events";
 import { EvidencePanel } from "@/components/evidence-panel";
 import { StatusBrief } from "@/components/status-brief";
-import { ArrowRightIcon, DocumentIcon, LockIcon, SparkIcon } from "@/components/icons";
+import { ArrowRightIcon, DocumentIcon, LockIcon } from "@/components/icons";
 
 const evidenceProcessing = buildEligibleEvidenceSet({
   user: syntheticRequestingUser,
