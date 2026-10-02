@@ -22,15 +22,23 @@ export function extractOperationalEvents({
           );
         }
 
+        if (!evidence.content.includes(event.evidenceExcerpt)) {
+          throw new Error(
+            `Evidence excerpt for event ${event.eventId} is not a substring of artifact ${evidence.id} content.`,
+          );
+        }
+
+        const { evidenceExcerpt, ...eventWithoutExcerpt } = event;
+
         return {
-          ...event,
+          ...eventWithoutExcerpt,
           extractionMethod: "SYNTHETIC_GROUND_TRUTH" as const,
           provenance: {
             sourceArtifactId: evidence.provenance.originalArtifactId,
             sourceSystem: evidence.provenance.source,
             sourceRecordedAt: evidence.timestamp,
             associationMethod: evidence.provenance.associationMethod,
-            evidenceExcerpt: evidence.content,
+            evidenceExcerpt,
           },
         };
       }),

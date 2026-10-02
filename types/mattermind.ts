@@ -106,8 +106,12 @@ export type OperationalEventDraft = {
   object: string | null;
 };
 
+export type OperationalEventGroundTruthEntry = OperationalEventDraft & {
+  evidenceExcerpt: string;
+};
+
 export type OperationalEventGroundTruth = Readonly<
-  Record<string, readonly OperationalEventDraft[]>
+  Record<string, readonly OperationalEventGroundTruthEntry[]>
 >;
 
 export type OperationalEvent = OperationalEventDraft & {
