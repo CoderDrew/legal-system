@@ -56,7 +56,7 @@ export const syntheticCurrentStateGroundTruth: CurrentStateGroundTruth = {
     {
       slotId: "important-date",
       expectedState: "UNKNOWN",
-      expectedValue: "Unknown",
+      expectedValue: null,
       supportingEventIds: [],
       supersededEventIds: [],
       rationale:
