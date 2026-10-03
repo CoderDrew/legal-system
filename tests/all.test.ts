@@ -4,6 +4,7 @@ import test from "node:test";
 import "./evidence-processing.test";
 import "./operational-events.test";
 import "./current-state-ground-truth.test";
+import "./current-state-reasoning.test";
 
 test("the test entrypoint includes every test file", () => {
   const testFiles = readdirSync(import.meta.dirname)
@@ -12,6 +13,7 @@ test("the test entrypoint includes every test file", () => {
 
   assert.deepEqual(testFiles, [
     "current-state-ground-truth.test.ts",
+    "current-state-reasoning.test.ts",
     "evidence-processing.test.ts",
     "operational-events.test.ts",
   ]);

@@ -9,6 +9,7 @@ import {
 } from "@/data/synthetic-matter";
 import { buildEligibleEvidenceSet } from "@/lib/evidence-processing";
 import { extractOperationalEvents } from "@/lib/operational-events";
+import { deriveCurrentStatusSlot } from "@/lib/current-state-reasoning";
 import { EvidencePanel } from "@/components/evidence-panel";
 import { StatusBrief } from "@/components/status-brief";
 import { ArrowRightIcon, DocumentIcon, LockIcon } from "@/components/icons";
@@ -24,6 +25,20 @@ const operationalEvents = extractOperationalEvents({
   groundTruth: syntheticOperationalEventGroundTruth,
   matterId: syntheticMatterBrief.matter.id,
 });
+
+// Derive the current-status slot from events (supersession-type slot)
+const derivedCurrentStatusSlot = deriveCurrentStatusSlot(
+  operationalEvents,
+  syntheticMatterBrief.matter.id,
+);
+
+// Build the brief with the derived current-status slot and predefined other slots
+const matterBrief = {
+  ...syntheticMatterBrief,
+  claims: syntheticMatterBrief.claims.map((claim) =>
+    claim.id === "current-status" ? derivedCurrentStatusSlot : claim,
+  ),
+};
 
 export function MatterMindApp() {
   const [isGenerated, setIsGenerated] = useState(false);
@@ -134,7 +149,7 @@ export function MatterMindApp() {
         <div className="mt-6">
           {isGenerated ? (
             <StatusBrief
-              brief={syntheticMatterBrief}
+              brief={matterBrief}
               eligibleEvidence={evidenceProcessing.eligibleEvidence}
               onInspectEvidence={setSelectedEvidenceIds}
               operationalEvents={operationalEvents}
@@ -150,9 +165,9 @@ export function MatterMindApp() {
                   No status brief shown
                 </h2>
                 <p className="mt-2 text-sm leading-6 text-slate-600">
-                  This increment displays a predefined synthetic status brief
-                  for demonstration purposes. The brief is not generated from events.
-                  Show the brief to review claims, evidence states, and source provenance.
+                  This increment derives the current-status slot (supersession-type)
+                  from operational events. The other 6 slots remain predefined. Show
+                  the brief to review claims, evidence states, and source provenance.
                 </p>
               </div>
             </section>
