@@ -1,4 +1,8 @@
-import type { OperationalEvent, StatusClaim } from "@/types/mattermind";
+import type {
+  OperationalEvent,
+  StatusClaim,
+  SyntheticMatter,
+} from "@/types/mattermind";
 
 /**
  * Derives the current-status slot from operational events using supersession reasoning.
@@ -18,6 +22,7 @@ import type { OperationalEvent, StatusClaim } from "@/types/mattermind";
 export function deriveCurrentStatusSlot(
   events: OperationalEvent[],
   matterId: string,
+  matter: SyntheticMatter,
 ): StatusClaim {
   const matterEvents = events.filter((e) => e.matterId === matterId);
 
@@ -132,17 +137,34 @@ export function deriveCurrentStatusSlot(
       } else if (approvalAction.includes("approval")) {
         if (approvalAction.includes("client")) {
           approvalTarget = "client approval";
-        } else if (
-          // Check for patterns like "Requested [Name]'s approval" or "your approval"
-          // which indicate requesting approval from someone (typically a client)
-          approvalAction.match(/requested\s+\w+(\s+\w+)?'s\s+approval/i) ||
-          approvalAction.includes("your approval")
-        ) {
+        } else if (approvalAction.includes("your approval")) {
+          // "your approval" indicates approval from the recipient (typically client)
           approvalTarget = "client approval";
         } else if (approvalAction.includes("attorney")) {
           approvalTarget = "attorney approval";
         } else {
-          approvalTarget = "approval";
+          // Check for possessive patterns like "Requested [Name]'s approval"
+          const possessiveMatch = approvalAction.match(
+            /requested\s+([\w\s]+)'s\s+approval/i,
+          );
+          if (possessiveMatch) {
+            const nameInAction = possessiveMatch[1].trim();
+            const clientName = matter.client.toLowerCase();
+            
+            // Check if the name in the action matches the client name
+            // (case-insensitive, handles full name or last name)
+            if (
+              clientName.includes(nameInAction.toLowerCase()) ||
+              nameInAction.toLowerCase().includes(clientName)
+            ) {
+              approvalTarget = "client approval";
+            } else {
+              // Use the specific person's name, not "client"
+              approvalTarget = `${nameInAction}'s approval`;
+            }
+          } else {
+            approvalTarget = "approval";
+          }
         }
       } else if (approvalAction.includes("decision")) {
         approvalTarget = "decision";

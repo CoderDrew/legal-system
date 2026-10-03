@@ -30,6 +30,7 @@ const operationalEvents = extractOperationalEvents({
 const derivedCurrentStatusSlot = deriveCurrentStatusSlot(
   operationalEvents,
   syntheticMatterBrief.matter.id,
+  syntheticMatterBrief.matter,
 );
 
 // Build the brief with the derived current-status slot and predefined other slots

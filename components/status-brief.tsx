@@ -226,8 +226,7 @@ export function StatusBrief({
             </h4>
             <p className="mt-1 text-xs leading-5 text-slate-500">
               Historical records of operational events. The current-status slot is
-              derived from these events using supersession reasoning. The other 6
-              slots remain predefined.
+              derived from the matter&apos;s events. The other 6 slots remain predefined.
             </p>
             <ol className="mt-3 space-y-2">
               {operationalEvents.map((event) => (

@@ -28,6 +28,7 @@ test("derived current-status slot matches ground-truth expectation", () => {
   const derived = deriveCurrentStatusSlot(
     extractedEvents,
     syntheticMatters[0].id,
+    syntheticMatters[0],
   );
   const expectation = syntheticCurrentStateGroundTruth.expectations.find(
     (exp) => exp.slotId === "current-status",
@@ -127,6 +128,7 @@ test("mutation: removing document-sent event breaks derivation", () => {
   const derived = deriveCurrentStatusSlot(
     eventsWithoutDocSent,
     syntheticMatters[0].id,
+    syntheticMatters[0],
   );
 
   // Without the document-sent event, the derived status should differ
@@ -155,6 +157,7 @@ test("mutation: removing approval-requested event breaks derivation", () => {
   const derived = deriveCurrentStatusSlot(
     eventsWithoutApproval,
     syntheticMatters[0].id,
+    syntheticMatters[0],
   );
 
   const expectation = syntheticCurrentStateGroundTruth.expectations.find(
@@ -175,6 +178,7 @@ test("derived slot uses only non-superseded events as evidence", () => {
   const derived = deriveCurrentStatusSlot(
     extractedEvents,
     syntheticMatters[0].id,
+    syntheticMatters[0],
   );
 
   const expectation = syntheticCurrentStateGroundTruth.expectations.find(
@@ -215,10 +219,12 @@ test("derivation is deterministic across multiple calls", () => {
   const derived1 = deriveCurrentStatusSlot(
     extractedEvents,
     syntheticMatters[0].id,
+    syntheticMatters[0],
   );
   const derived2 = deriveCurrentStatusSlot(
     extractedEvents,
     syntheticMatters[0].id,
+    syntheticMatters[0],
   );
 
   assert.deepEqual(
@@ -233,6 +239,7 @@ test("derivation uses only events from the specified matter", () => {
   const derived = deriveCurrentStatusSlot(
     extractedEvents,
     syntheticMatters[0].id,
+    syntheticMatters[0],
   );
 
   // All evidence IDs should map to events belonging to the selected matter
@@ -256,6 +263,16 @@ test("derivation uses only events from the specified matter", () => {
 
 // Synthetic non-fixture matter tests
 test("non-fixture matter: contract draft awaiting attorney review", () => {
+  const testMatter = {
+    id: "test-matter-001",
+    matterNumber: "2026-TEST-001",
+    name: "Contract Review Test",
+    client: "Test Client Corp",
+    responsibleAttorney: "Test Attorney",
+    status: "Active" as const,
+    participantIds: ["test-client", "test-attorney"],
+  };
+  
   const syntheticEvents: OperationalEvent[] = [
     {
       eventId: "test-doc-1",
@@ -293,7 +310,11 @@ test("non-fixture matter: contract draft awaiting attorney review", () => {
     },
   ];
 
-  const derived = deriveCurrentStatusSlot(syntheticEvents, "test-matter-001");
+  const derived = deriveCurrentStatusSlot(
+    syntheticEvents,
+    "test-matter-001",
+    testMatter,
+  );
 
   assert.equal(derived.state, "SUPPORTED");
   assert.equal(derived.value, "Draft contract is awaiting attorney review.");
@@ -301,6 +322,16 @@ test("non-fixture matter: contract draft awaiting attorney review", () => {
 });
 
 test("non-fixture matter: proposed agreement from client", () => {
+  const testMatter = {
+    id: "test-matter-002",
+    matterNumber: "2026-TEST-002",
+    name: "Agreement Test",
+    client: "Test Client",
+    responsibleAttorney: "Test Attorney",
+    status: "Active" as const,
+    participantIds: ["test-client-2", "test-attorney-2"],
+  };
+  
   const syntheticEvents: OperationalEvent[] = [
     {
       eventId: "test-doc-2",
@@ -338,7 +369,11 @@ test("non-fixture matter: proposed agreement from client", () => {
     },
   ];
 
-  const derived = deriveCurrentStatusSlot(syntheticEvents, "test-matter-002");
+  const derived = deriveCurrentStatusSlot(
+    syntheticEvents,
+    "test-matter-002",
+    testMatter,
+  );
 
   assert.equal(derived.state, "SUPPORTED");
   assert.equal(derived.value, "Proposed agreement is awaiting client approval.");
@@ -346,6 +381,16 @@ test("non-fixture matter: proposed agreement from client", () => {
 });
 
 test("non-fixture matter: waiting superseded by later action", () => {
+  const testMatter = {
+    id: "test-matter-003",
+    matterNumber: "2026-TEST-003",
+    name: "Supersession Test",
+    client: "Test Client 3",
+    responsibleAttorney: "Test Attorney 3",
+    status: "Active" as const,
+    participantIds: ["test-client-3"],
+  };
+  
   const syntheticEvents: OperationalEvent[] = [
     {
       eventId: "test-waiting-1",
@@ -400,7 +445,11 @@ test("non-fixture matter: waiting superseded by later action", () => {
     },
   ];
 
-  const derived = deriveCurrentStatusSlot(syntheticEvents, "test-matter-003");
+  const derived = deriveCurrentStatusSlot(
+    syntheticEvents,
+    "test-matter-003",
+    testMatter,
+  );
 
   // The waiting state should be superseded; status should reflect the later events
   assert.equal(derived.state, "SUPPORTED");
@@ -412,6 +461,16 @@ test("non-fixture matter: waiting superseded by later action", () => {
 });
 
 test("event ordering: latest by timestamp, not array position", () => {
+  const testMatter = {
+    id: "test-matter-004",
+    matterNumber: "2026-TEST-004",
+    name: "Ordering Test",
+    client: "Test Client 4",
+    responsibleAttorney: "Test Attorney 4",
+    status: "Active" as const,
+    participantIds: ["test-client-4"],
+  };
+  
   // Events intentionally out of chronological order in the array
   const syntheticEvents: OperationalEvent[] = [
     {
@@ -450,7 +509,11 @@ test("event ordering: latest by timestamp, not array position", () => {
     },
   ];
 
-  const derived = deriveCurrentStatusSlot(syntheticEvents, "test-matter-004");
+  const derived = deriveCurrentStatusSlot(
+    syntheticEvents,
+    "test-matter-004",
+    testMatter,
+  );
 
   // Should use the chronologically later event, not the last in array
   assert.equal(derived.state, "SUPPORTED");
@@ -461,6 +524,16 @@ test("event ordering: latest by timestamp, not array position", () => {
 });
 
 test("supersession comparison: earlier event must be superseded by later event", () => {
+  const testMatter = {
+    id: "test-matter-supersession",
+    matterNumber: "2026-TEST-SUP",
+    name: "Supersession Test",
+    client: "Test Client 5",
+    responsibleAttorney: "Test Attorney 5",
+    status: "Active" as const,
+    participantIds: ["test-client-5"],
+  };
+  
   // This test verifies that the > comparison is correct (not <)
   // If the comparison is flipped, supersession won't work correctly
   const syntheticEvents: OperationalEvent[] = [
@@ -520,6 +593,7 @@ test("supersession comparison: earlier event must be superseded by later event",
   const derived = deriveCurrentStatusSlot(
     syntheticEvents,
     "test-matter-supersession",
+    testMatter,
   );
 
   // The status should be based on the later events (doc + approval), not the waiting event
@@ -544,6 +618,16 @@ test("supersession comparison: earlier event must be superseded by later event",
 });
 
 test("supersession: waiting event superseded by document-sent (no approval)", () => {
+  const testMatter = {
+    id: "test-m-flip",
+    matterNumber: "2026-TEST-FLIP",
+    name: "Flip Test",
+    client: "Test Client 6",
+    responsibleAttorney: "Test Attorney 6",
+    status: "Active" as const,
+    participantIds: ["test-client-6"],
+  };
+  
   // This test catches the flipped comparison mutation
   // It has ONLY waiting + document events (no approval to override)
   const syntheticEvents: OperationalEvent[] = [
@@ -583,7 +667,11 @@ test("supersession: waiting event superseded by document-sent (no approval)", ()
     },
   ];
 
-  const derived = deriveCurrentStatusSlot(syntheticEvents, "test-m-flip");
+  const derived = deriveCurrentStatusSlot(
+    syntheticEvents,
+    "test-m-flip",
+    testMatter,
+  );
 
   // With correct comparison (>): waiting is superseded, status describes the document event
   // With flipped comparison (<): waiting is NOT superseded, status says "Waiting for brief"
@@ -597,7 +685,83 @@ test("supersession: waiting event superseded by document-sent (no approval)", ()
   );
 });
 
+test("non-client possessive approval: Judge Lee's approval != client approval", () => {
+  const testMatter = {
+    id: "test-matter-judge",
+    matterNumber: "2026-TEST-JUDGE",
+    name: "Court Approval Test",
+    client: "Jane Doe",
+    responsibleAttorney: "Test Attorney",
+    status: "Active" as const,
+    participantIds: ["test-client-jane", "test-attorney"],
+  };
+  
+  const syntheticEvents: OperationalEvent[] = [
+    {
+      eventId: "test-order-doc",
+      matterId: "test-matter-judge",
+      eventType: "DOCUMENT_SENT",
+      occurredAt: "2026-05-10T10:00:00Z",
+      actor: "Attorney",
+      action: "Sent proposed order",
+      object: "Proposed order",
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: "test-art-order",
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-05-10T10:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "proposed order",
+      },
+    },
+    {
+      eventId: "test-judge-approval",
+      matterId: "test-matter-judge",
+      eventType: "APPROVAL_REQUESTED",
+      occurredAt: "2026-05-10T11:00:00Z",
+      actor: "Attorney",
+      action: "Requested Judge Lee's approval of the proposed order",
+      object: "Proposed order",
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: "test-art-judge-req",
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-05-10T11:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "need Judge Lee's approval",
+      },
+    },
+  ];
+
+  const derived = deriveCurrentStatusSlot(
+    syntheticEvents,
+    "test-matter-judge",
+    testMatter,
+  );
+
+  // Should NOT say "client approval" because Judge Lee is not the client (Jane Doe is)
+  assert.ok(
+    !derived.value.includes("client approval"),
+    `Should not say 'client approval' when approval is from Judge Lee, not client Jane Doe. Got: ${derived.value}`,
+  );
+  // Should mention Judge Lee's name or just say "approval"
+  assert.ok(
+    derived.value.includes("Judge Lee") || derived.value.endsWith("approval."),
+    `Should mention Judge Lee or use generic 'approval'. Got: ${derived.value}`,
+  );
+});
+
 test("timestamp tie-breaker: uses eventId lexicographically", () => {
+  const testMatter = {
+    id: "test-matter-005",
+    matterNumber: "2026-TEST-005",
+    name: "Tie Test",
+    client: "Test Client 7",
+    responsibleAttorney: "Test Attorney 7",
+    status: "Active" as const,
+    participantIds: ["test-client-7"],
+  };
+  
   const syntheticEvents: OperationalEvent[] = [
     {
       eventId: "test-event-aaa",
@@ -635,7 +799,11 @@ test("timestamp tie-breaker: uses eventId lexicographically", () => {
     },
   ];
 
-  const derived = deriveCurrentStatusSlot(syntheticEvents, "test-matter-005");
+  const derived = deriveCurrentStatusSlot(
+    syntheticEvents,
+    "test-matter-005",
+    testMatter,
+  );
 
   // With identical timestamps, should use the event with higher eventId (zzz > aaa)
   assert.equal(derived.state, "SUPPORTED");
