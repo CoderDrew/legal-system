@@ -10,7 +10,7 @@ import {
 import { syntheticCurrentStateGroundTruth } from "@/data/synthetic-current-state";
 import { buildEligibleEvidenceSet } from "@/lib/evidence-processing";
 import { extractOperationalEvents } from "@/lib/operational-events";
-import { deriveCurrentStatusSlot } from "@/lib/current-state-reasoning";
+import { deriveCurrentStatusSlot, deriveLastImportantEventSlot } from "@/lib/current-state-reasoning";
 
 const evidenceProcessing = buildEligibleEvidenceSet({
   user: syntheticRequestingUser,
@@ -808,4 +808,486 @@ test("timestamp tie-breaker: uses eventId lexicographically", () => {
   // With identical timestamps, should use the event with higher eventId (zzz > aaa)
   assert.equal(derived.state, "SUPPORTED");
   assert.equal(derived.evidenceIds[0], "test-artifact-11");
+});
+
+// Tests for last-important-event slot derivation
+test("derived last-important-event slot matches ground-truth expectation", () => {
+  const derived = deriveLastImportantEventSlot(
+    extractedEvents,
+    syntheticMatters[0].id,
+    syntheticMatters[0],
+  );
+  const expectation = syntheticCurrentStateGroundTruth.expectations.find(
+    (exp) => exp.slotId === "last-important-event",
+  );
+
+  assert.ok(expectation, "Ground truth has last-important-event expectation");
+
+  assert.equal(
+    derived.id,
+    "last-important-event",
+    "Derived slot has correct ID",
+  );
+  assert.equal(
+    derived.state,
+    expectation.expectedState,
+    "Derived state matches ground truth",
+  );
+  assert.equal(
+    derived.value,
+    expectation.expectedValue,
+    "Derived value matches ground truth",
+  );
+
+  // Map event IDs to artifact IDs for comparison
+  const eventToArtifactMap = new Map(
+    extractedEvents.map((event) => [
+      event.eventId,
+      event.provenance.sourceArtifactId,
+    ]),
+  );
+
+  const expectedArtifactIds = expectation.supportingEventIds
+    .map((eventId) => eventToArtifactMap.get(eventId))
+    .filter((id): id is string => id !== undefined)
+    .sort();
+  const derivedArtifactIds = [...derived.evidenceIds].sort();
+
+  assert.deepEqual(
+    derivedArtifactIds,
+    expectedArtifactIds,
+    "Derived evidence artifacts match ground truth supporting events",
+  );
+});
+
+test("last-important-event: identifies most recent event by timestamp", () => {
+  const testMatter = {
+    id: "test-matter-lie-001",
+    matterNumber: "2026-LIE-001",
+    name: "Last Event Test",
+    client: "Test Client",
+    responsibleAttorney: "Test Attorney",
+    status: "Active" as const,
+    participantIds: ["test-client"],
+  };
+
+  const syntheticEvents: OperationalEvent[] = [
+    {
+      eventId: "test-event-1",
+      matterId: "test-matter-lie-001",
+      eventType: "DOCUMENT_SENT",
+      occurredAt: "2026-09-10T10:00:00Z",
+      actor: "Attorney",
+      action: "Sent initial draft",
+      object: "Draft",
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: "test-artifact-1",
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-10T10:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "draft",
+      },
+    },
+    {
+      eventId: "test-event-2",
+      matterId: "test-matter-lie-001",
+      eventType: "APPROVAL_REQUESTED",
+      occurredAt: "2026-09-15T14:30:00Z",
+      actor: "Attorney",
+      action: "Requested client approval",
+      object: "Draft",
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: "test-artifact-2",
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-15T14:30:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "approval needed",
+      },
+    },
+  ];
+
+  const derived = deriveLastImportantEventSlot(
+    syntheticEvents,
+    "test-matter-lie-001",
+    testMatter,
+  );
+
+  assert.equal(derived.state, "SUPPORTED");
+  // Should use the later event (Sep 15)
+  assert.equal(derived.evidenceIds[0], "test-artifact-2");
+  assert.ok(derived.value.includes("September 15, 2026"));
+  assert.ok(derived.value.includes("Attorney requested client approval"));
+});
+
+test("last-important-event: formats date and actor correctly", () => {
+  const testMatter = {
+    id: "test-matter-lie-002",
+    matterNumber: "2026-LIE-002",
+    name: "Format Test",
+    client: "Test Client",
+    responsibleAttorney: "Test Attorney",
+    status: "Active" as const,
+    participantIds: ["test-client"],
+  };
+
+  const syntheticEvents: OperationalEvent[] = [
+    {
+      eventId: "test-event-format",
+      matterId: "test-matter-lie-002",
+      eventType: "DOCUMENT_SENT",
+      occurredAt: "2026-09-17T17:45:00Z",
+      actor: "Alex Thompson",
+      action: "Requested Jordan Smith's approval before responding.",
+      object: "Document",
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: "test-artifact-format",
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-17T17:45:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "approval",
+      },
+    },
+  ];
+
+  const derived = deriveLastImportantEventSlot(
+    syntheticEvents,
+    "test-matter-lie-002",
+    testMatter,
+  );
+
+  assert.equal(derived.state, "SUPPORTED");
+  // Should format as: "{Month} {Day}, {Year} — {Actor} {action}."
+  // Actor should be preserved as-is when not matching responsible attorney
+  assert.ok(derived.value.includes("September 17, 2026"));
+  assert.ok(derived.value.includes("Alex Thompson"));
+});
+
+test("last-important-event: excludes record-keeping events (substantive event wins)", () => {
+  const testMatter = {
+    id: "test-matter-lie-003",
+    matterNumber: "2026-LIE-003",
+    name: "Record Keeping Test",
+    client: "Test Client",
+    responsibleAttorney: "Test Attorney",
+    status: "Active" as const,
+    participantIds: ["test-client"],
+  };
+
+  const syntheticEvents: OperationalEvent[] = [
+    {
+      eventId: "test-event-substantive",
+      matterId: "test-matter-lie-003",
+      eventType: "APPROVAL_REQUESTED",
+      occurredAt: "2026-09-17T09:00:00Z",
+      actor: "Test Attorney",
+      action: "Requested client approval",
+      object: "Document",
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: "test-artifact-substantive",
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-17T09:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "approval",
+      },
+    },
+    {
+      eventId: "test-event-record-keeping",
+      matterId: "test-matter-lie-003",
+      eventType: "MATTER_STATUS_RECORDED",
+      occurredAt: "2026-09-18T10:00:00Z",
+      actor: null,
+      action: "Recorded the matter status as Active.",
+      object: "Matter status",
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: "test-artifact-record",
+        sourceSystem: "Clio",
+        sourceRecordedAt: "2026-09-18T10:00:00Z",
+        associationMethod: "AUTHORITATIVE_SOURCE_RELATIONSHIP",
+        evidenceExcerpt: "status",
+      },
+    },
+  ];
+
+  const derived = deriveLastImportantEventSlot(
+    syntheticEvents,
+    "test-matter-lie-003",
+    testMatter,
+  );
+
+  assert.equal(derived.state, "SUPPORTED");
+  // MF2: Should select the substantive event (Sep 17) not the later record-keeping event (Sep 18)
+  assert.equal(derived.evidenceIds[0], "test-artifact-substantive");
+  assert.ok(derived.value.includes("September 17, 2026"));
+  assert.ok(derived.value.includes("Attorney"));
+});
+
+test("last-important-event: returns UNKNOWN when no events", () => {
+  const testMatter = {
+    id: "nonexistent-matter",
+    matterNumber: "2026-NONE",
+    name: "Nonexistent",
+    client: "None",
+    responsibleAttorney: "None",
+    status: "Active" as const,
+    participantIds: [],
+  };
+
+  const derived = deriveLastImportantEventSlot(
+    [],
+    "nonexistent-matter",
+    testMatter,
+  );
+
+  assert.equal(derived.state, "UNKNOWN");
+  assert.equal(derived.value, "Unknown");
+  assert.equal(derived.evidenceIds.length, 0);
+});
+
+test("last-important-event: uses eventId as tie-breaker for same timestamp", () => {
+  const testMatter = {
+    id: "test-matter-lie-004",
+    matterNumber: "2026-LIE-004",
+    name: "Tie Breaker Test",
+    client: "Test Client",
+    responsibleAttorney: "Test Attorney",
+    status: "Active" as const,
+    participantIds: ["test-client"],
+  };
+
+  const syntheticEvents: OperationalEvent[] = [
+    {
+      eventId: "test-event-aaa",
+      matterId: "test-matter-lie-004",
+      eventType: "APPROVAL_REQUESTED",
+      occurredAt: "2026-09-15T12:00:00Z",
+      actor: "Attorney A",
+      action: "Requested approval A",
+      object: "Document A",
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: "test-artifact-a",
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-15T12:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "approval A",
+      },
+    },
+    {
+      eventId: "test-event-zzz",
+      matterId: "test-matter-lie-004",
+      eventType: "APPROVAL_REQUESTED",
+      occurredAt: "2026-09-15T12:00:00Z",
+      actor: "Attorney B",
+      action: "Requested approval B",
+      object: "Document B",
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: "test-artifact-b",
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-15T12:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "approval B",
+      },
+    },
+  ];
+
+  const derived = deriveLastImportantEventSlot(
+    syntheticEvents,
+    "test-matter-lie-004",
+    testMatter,
+  );
+
+  assert.equal(derived.state, "SUPPORTED");
+  // With identical timestamps, should use the event with higher eventId (zzz > aaa)
+  assert.equal(derived.evidenceIds[0], "test-artifact-b");
+  assert.ok(derived.value.includes("Attorney B requested approval B"));
+});
+
+test("last-important-event: deterministic across multiple calls", () => {
+  const derived1 = deriveLastImportantEventSlot(
+    extractedEvents,
+    syntheticMatters[0].id,
+    syntheticMatters[0],
+  );
+  const derived2 = deriveLastImportantEventSlot(
+    extractedEvents,
+    syntheticMatters[0].id,
+    syntheticMatters[0],
+  );
+
+  assert.deepEqual(
+    derived1,
+    derived2,
+    "Multiple derivation calls produce identical results",
+  );
+});
+
+test("last-important-event: uses only events from specified matter", () => {
+  const testMatter = {
+    id: "matter-1",
+    matterNumber: "2026-M1",
+    name: "Matter 1",
+    client: "Client 1",
+    responsibleAttorney: "Attorney",
+    status: "Active" as const,
+    participantIds: [],
+  };
+
+  const multiMatterEvents: OperationalEvent[] = [
+    {
+      eventId: "matter-1-event",
+      matterId: "matter-1",
+      eventType: "APPROVAL_REQUESTED",
+      occurredAt: "2026-09-20T10:00:00Z",
+      actor: "Attorney",
+      action: "Requested approval",
+      object: "Document",
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: "artifact-1",
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-20T10:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "approval",
+      },
+    },
+    {
+      eventId: "matter-2-event",
+      matterId: "matter-2",
+      eventType: "DOCUMENT_SENT",
+      occurredAt: "2026-09-21T10:00:00Z",
+      actor: "Attorney",
+      action: "Sent document",
+      object: "Document",
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: "artifact-2",
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-21T10:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "document",
+      },
+    },
+  ];
+
+  const derived = deriveLastImportantEventSlot(
+    multiMatterEvents,
+    "matter-1",
+    testMatter,
+  );
+
+  assert.equal(derived.state, "SUPPORTED");
+  // Should only use matter-1 event, even though matter-2 event is later
+  assert.equal(derived.evidenceIds[0], "artifact-1");
+  assert.ok(derived.value.includes("September 20, 2026"));
+});
+
+test("last-important-event: handles events out of chronological order in array", () => {
+  const testMatter = {
+    id: "test-matter-lie-005",
+    matterNumber: "2026-LIE-005",
+    name: "Order Test",
+    client: "Test Client",
+    responsibleAttorney: "Test Attorney",
+    status: "Active" as const,
+    participantIds: ["test-client"],
+  };
+
+  // Events intentionally out of chronological order
+  const syntheticEvents: OperationalEvent[] = [
+    {
+      eventId: "test-later",
+      matterId: "test-matter-lie-005",
+      eventType: "APPROVAL_REQUESTED",
+      occurredAt: "2026-09-20T15:00:00Z",
+      actor: "Attorney",
+      action: "Requested decision",
+      object: "Memo",
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: "test-artifact-later",
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-20T15:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "decision",
+      },
+    },
+    {
+      eventId: "test-earlier",
+      matterId: "test-matter-lie-005",
+      eventType: "DOCUMENT_SENT",
+      occurredAt: "2026-09-19T14:00:00Z",
+      actor: "Attorney",
+      action: "Sent analysis",
+      object: "Analysis",
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: "test-artifact-earlier",
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-19T14:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "analysis",
+      },
+    },
+  ];
+
+  const derived = deriveLastImportantEventSlot(
+    syntheticEvents,
+    "test-matter-lie-005",
+    testMatter,
+  );
+
+  assert.equal(derived.state, "SUPPORTED");
+  // Should use chronologically later event (Sep 20), not last in array
+  assert.equal(derived.evidenceIds[0], "test-artifact-later");
+  assert.ok(derived.value.includes("September 20, 2026"));
+  assert.ok(derived.value.includes("Attorney requested decision"));
+});
+
+test("last-important-event: handles regex special characters in client name", () => {
+  const testMatter = {
+    id: "test-matter-lie-006",
+    matterNumber: "2026-LIE-006",
+    name: "Regex Special Char Test",
+    client: "Jordan Smith (Trustee)",
+    responsibleAttorney: "Test Attorney",
+    status: "Active" as const,
+    participantIds: ["test-client"],
+  };
+
+  const syntheticEvents: OperationalEvent[] = [
+    {
+      eventId: "test-event-regex",
+      matterId: "test-matter-lie-006",
+      eventType: "APPROVAL_REQUESTED",
+      occurredAt: "2026-09-17T10:00:00Z",
+      actor: "Test Attorney",
+      action: "Requested Jordan Smith (Trustee)'s approval of the settlement.",
+      object: "Settlement",
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: "test-artifact-regex",
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-17T10:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "approval",
+      },
+    },
+  ];
+
+  const derived = deriveLastImportantEventSlot(
+    syntheticEvents,
+    "test-matter-lie-006",
+    testMatter,
+  );
+
+  assert.equal(derived.state, "SUPPORTED");
+  // MF3: Should correctly handle parentheses without regex errors
+  assert.ok(derived.value.includes("September 17, 2026"));
+  assert.ok(!derived.value.includes("[REGEX ERROR]"));
 });

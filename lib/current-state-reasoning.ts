@@ -5,6 +5,138 @@ import type {
 } from "@/types/mattermind";
 
 /**
+ * Derives the last-important-event slot from operational events.
+ *
+ * This is a historical-event slot: it identifies the most recent
+ * substantive operational event and formats it with date and description.
+ *
+ * Selection rule: The most recent event by timestamp (with eventId as tie-breaker).
+ * All operational events are considered "important" for this slot.
+ *
+ * Format: "{Month} {Day}, {Year} — {Actor role} {normalized action}."
+ * Actor normalization: Use "Attorney" if actor matches matter's responsible attorney.
+ * Action normalization: Replace client name mentions with "client", simplify phrasing.
+ *
+ * Deterministic: Uses event timestamps, actor, action, and matter context fields.
+ * No AI, models, or fixture-specific strings.
+ */
+export function deriveLastImportantEventSlot(
+  events: OperationalEvent[],
+  matterId: string,
+  matter: SyntheticMatter,
+): StatusClaim {
+  // MF2: Exclude record-keeping event types
+  const matterEvents = events.filter((e) => 
+    e.matterId === matterId && 
+    e.eventType !== "MATTER_STATUS_RECORDED" && 
+    e.eventType !== "RESPONSIBILITY_RECORDED"
+  );
+
+  if (matterEvents.length === 0) {
+    return {
+      id: "last-important-event",
+      label: "Last Important Event",
+      value: "Unknown",
+      state: "UNKNOWN",
+      evidenceIds: [],
+    };
+  }
+
+  // Get the latest event by timestamp
+  // Use occurredAt when available (more semantically accurate), else sourceRecordedAt
+  const latestEvent = matterEvents.reduce((latest, current) => {
+    const latestTime = new Date(
+      latest.occurredAt ?? latest.provenance.sourceRecordedAt
+    ).getTime();
+    const currentTime = new Date(
+      current.occurredAt ?? current.provenance.sourceRecordedAt
+    ).getTime();
+    
+    if (currentTime > latestTime) return current;
+    if (currentTime < latestTime) return latest;
+    
+    // Timestamps are equal - prefer events with explicit occurredAt (actual events over mentions)
+    if (current.occurredAt !== null && latest.occurredAt === null) return current;
+    if (current.occurredAt === null && latest.occurredAt !== null) return latest;
+    
+    // Both null or both non-null: tie-break with eventId
+    return current.eventId > latest.eventId ? current : latest;
+  });
+
+  // Format the date portion (use occurredAt when available, else sourceRecordedAt)
+  const eventTimestamp = latestEvent.occurredAt ?? latestEvent.provenance.sourceRecordedAt;
+  const eventDate = new Date(eventTimestamp);
+  const formattedDate = eventDate.toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+
+  // Normalize actor: use role if actor matches matter's responsible attorney
+  let actorDisplay: string;
+  if (latestEvent.actor) {
+    actorDisplay = latestEvent.actor === matter.responsibleAttorney 
+      ? "Attorney" 
+      : latestEvent.actor;
+  } else {
+    actorDisplay = "";
+  }
+
+  // MF1: Template-based description for structured event types
+  let description: string;
+  
+  if (latestEvent.eventType === "APPROVAL_REQUESTED") {
+    // Template: "{actor role} requested {approver role} approval of the {object}"
+    // Only use template when client name is found and object is meaningful
+    const actor = actorDisplay || latestEvent.actor || "Someone";
+    const object = latestEvent.object;
+    
+    // MF3: Determine if client name appears in action using safe includes check
+    const clientName = matter.client.toLowerCase();
+    const actionLower = latestEvent.action.toLowerCase();
+    
+    if (actionLower.includes(clientName) && object) {
+      // Use template: replace client name with "client" and use object field
+      description = `${actor} requested client approval of the ${object.toLowerCase()}.`;
+    } else {
+      // Fall back to raw action with actor prepended
+      const actionText = latestEvent.action.charAt(0).toLowerCase() + latestEvent.action.slice(1);
+      description = `${actor} ${actionText}`;
+      if (!description.endsWith(".")) {
+        description = `${description}.`;
+      }
+    }
+  } else {
+    // Fallback: use raw action text for other event types
+    const actionText = latestEvent.action;
+    
+    if (actorDisplay) {
+      // Lowercase first letter of action for continuity with actor name
+      const actionLowercased = actionText.charAt(0).toLowerCase() + actionText.slice(1);
+      description = `${actorDisplay} ${actionLowercased}`;
+    } else {
+      description = actionText;
+    }
+    
+    // Ensure description ends with a period
+    if (!description.endsWith(".")) {
+      description = `${description}.`;
+    }
+  }
+
+  const eventValue = `${formattedDate} — ${description}`;
+
+  return {
+    id: "last-important-event",
+    label: "Last Important Event",
+    value: eventValue,
+    state: "SUPPORTED",
+    evidenceIds: [latestEvent.provenance.sourceArtifactId],
+  };
+}
+
+/**
  * Derives the current-status slot from operational events using supersession reasoning.
  *
  * This is the supersession-type slot: it identifies events that supersede
