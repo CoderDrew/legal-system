@@ -80,28 +80,49 @@ export function deriveLastImportantEventSlot(
       ? "Attorney" 
       : latestEvent.actor;
   } else {
-    // No actor recorded - will format action without actor prefix
     actorDisplay = "";
   }
 
-  // MF1: For now, just use raw action (template logic causes test hang)
-  // MF3: Use simple includes check (handles regex chars safely)
-  const actionText = latestEvent.action.charAt(0).toLowerCase() + latestEvent.action.slice(1);
-  
-  // Format the full description
+  // MF1: Template-based description for structured event types
   let description: string;
-  if (actorDisplay) {
-    // Lowercase first letter of action for continuity with actor name
-    const actionLowercased = actionText.charAt(0).toLowerCase() + actionText.slice(1);
-    description = `${actorDisplay} ${actionLowercased}`;
+  
+  if (latestEvent.eventType === "APPROVAL_REQUESTED") {
+    // Template: "{actor role} requested {approver role} approval of the {object}"
+    // Only use template when client name is found and object is meaningful
+    const actor = actorDisplay || latestEvent.actor || "Someone";
+    const object = latestEvent.object;
+    
+    // MF3: Determine if client name appears in action using safe includes check
+    const clientName = matter.client.toLowerCase();
+    const actionLower = latestEvent.action.toLowerCase();
+    
+    if (actionLower.includes(clientName) && object) {
+      // Use template: replace client name with "client" and use object field
+      description = `${actor} requested client approval of the ${object.toLowerCase()}.`;
+    } else {
+      // Fall back to raw action with actor prepended
+      const actionText = latestEvent.action.charAt(0).toLowerCase() + latestEvent.action.slice(1);
+      description = `${actor} ${actionText}`;
+      if (!description.endsWith(".")) {
+        description = `${description}.`;
+      }
+    }
   } else {
-    // No actor - use action as-is
-    description = actionText;
-  }
-
-  // Ensure description ends with a period
-  if (!description.endsWith(".")) {
-    description = `${description}.`;
+    // Fallback: use raw action text for other event types
+    const actionText = latestEvent.action;
+    
+    if (actorDisplay) {
+      // Lowercase first letter of action for continuity with actor name
+      const actionLowercased = actionText.charAt(0).toLowerCase() + actionText.slice(1);
+      description = `${actorDisplay} ${actionLowercased}`;
+    } else {
+      description = actionText;
+    }
+    
+    // Ensure description ends with a period
+    if (!description.endsWith(".")) {
+      description = `${description}.`;
+    }
   }
 
   const eventValue = `${formattedDate} — ${description}`;

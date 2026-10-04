@@ -811,16 +811,7 @@ test("timestamp tie-breaker: uses eventId lexicographically", () => {
 });
 
 // Tests for last-important-event slot derivation
-test.skip("derived last-important-event slot matches ground-truth expectation - tsx bug prevents template implementation", () => {
-  // MF1 NOTE: EventType-keyed template is correct (verified standalone) but causes tsx --test to hang
-  // Root cause: tsx module loader has issues with ANY conditional logic (if/else/ternary/&&) in event processing
-  // 
-  // Current output (minimal): "September 17, 2026 — Attorney requested Jordan Smith's approval before responding."
-  // Expected (template):      "September 17, 2026 — Attorney requested client approval of the revised settlement language."
-  //
-  // Template logic verified correct in verify-template.ts - produces exact match with ground truth
-  // Issue is NOT the logic but tsx's inability to load modules with conditionals in this context
-  //
+test("derived last-important-event slot matches ground-truth expectation", () => {
   const derived = deriveLastImportantEventSlot(
     extractedEvents,
     syntheticMatters[0].id,
