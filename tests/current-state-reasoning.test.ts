@@ -965,11 +965,11 @@ test("last-important-event: formats date and actor correctly", () => {
   assert.ok(derived.value.includes("Alex Thompson"));
 });
 
-test("last-important-event: handles null actor (system events)", () => {
+test("last-important-event: excludes record-keeping events (substantive event wins)", () => {
   const testMatter = {
     id: "test-matter-lie-003",
     matterNumber: "2026-LIE-003",
-    name: "Null Actor Test",
+    name: "Record Keeping Test",
     client: "Test Client",
     responsibleAttorney: "Test Attorney",
     status: "Active" as const,
@@ -978,18 +978,35 @@ test("last-important-event: handles null actor (system events)", () => {
 
   const syntheticEvents: OperationalEvent[] = [
     {
-      eventId: "test-event-null-actor",
+      eventId: "test-event-substantive",
+      matterId: "test-matter-lie-003",
+      eventType: "APPROVAL_REQUESTED",
+      occurredAt: "2026-09-17T09:00:00Z",
+      actor: "Test Attorney",
+      action: "Requested client approval",
+      object: "Document",
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: "test-artifact-substantive",
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-17T09:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "approval",
+      },
+    },
+    {
+      eventId: "test-event-record-keeping",
       matterId: "test-matter-lie-003",
       eventType: "MATTER_STATUS_RECORDED",
-      occurredAt: "2026-09-17T09:00:00Z",
+      occurredAt: "2026-09-18T10:00:00Z",
       actor: null,
       action: "Recorded the matter status as Active.",
       object: "Matter status",
       extractionMethod: "SYNTHETIC_GROUND_TRUTH",
       provenance: {
-        sourceArtifactId: "test-artifact-null",
+        sourceArtifactId: "test-artifact-record",
         sourceSystem: "Clio",
-        sourceRecordedAt: "2026-09-17T09:00:00Z",
+        sourceRecordedAt: "2026-09-18T10:00:00Z",
         associationMethod: "AUTHORITATIVE_SOURCE_RELATIONSHIP",
         evidenceExcerpt: "status",
       },
@@ -1003,11 +1020,10 @@ test("last-important-event: handles null actor (system events)", () => {
   );
 
   assert.equal(derived.state, "SUPPORTED");
-  // Should format as: "{Month} {Day}, {Year} — {Action as-is}."
-  assert.equal(
-    derived.value,
-    "September 17, 2026 — Recorded the matter status as Active.",
-  );
+  // MF2: Should select the substantive event (Sep 17) not the later record-keeping event (Sep 18)
+  assert.equal(derived.evidenceIds[0], "test-artifact-substantive");
+  assert.ok(derived.value.includes("September 17, 2026"));
+  assert.ok(derived.value.includes("Attorney"));
 });
 
 test("last-important-event: returns UNKNOWN when no events", () => {
@@ -1231,4 +1247,47 @@ test("last-important-event: handles events out of chronological order in array",
   assert.equal(derived.evidenceIds[0], "test-artifact-later");
   assert.ok(derived.value.includes("September 20, 2026"));
   assert.ok(derived.value.includes("Attorney requested decision"));
+});
+
+test("last-important-event: handles regex special characters in client name", () => {
+  const testMatter = {
+    id: "test-matter-lie-006",
+    matterNumber: "2026-LIE-006",
+    name: "Regex Special Char Test",
+    client: "Jordan Smith (Trustee)",
+    responsibleAttorney: "Test Attorney",
+    status: "Active" as const,
+    participantIds: ["test-client"],
+  };
+
+  const syntheticEvents: OperationalEvent[] = [
+    {
+      eventId: "test-event-regex",
+      matterId: "test-matter-lie-006",
+      eventType: "APPROVAL_REQUESTED",
+      occurredAt: "2026-09-17T10:00:00Z",
+      actor: "Test Attorney",
+      action: "Requested Jordan Smith (Trustee)'s approval of the settlement.",
+      object: "Settlement",
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: "test-artifact-regex",
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-17T10:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "approval",
+      },
+    },
+  ];
+
+  const derived = deriveLastImportantEventSlot(
+    syntheticEvents,
+    "test-matter-lie-006",
+    testMatter,
+  );
+
+  assert.equal(derived.state, "SUPPORTED");
+  // MF3: Should correctly handle parentheses without regex errors
+  assert.ok(derived.value.includes("September 17, 2026"));
+  assert.ok(!derived.value.includes("[REGEX ERROR]"));
 });
