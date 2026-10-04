@@ -304,14 +304,15 @@ export function deriveWaitingOnSlot(
 
     if (sourceArtifact && sourceArtifact.artifactType === "Email" && sourceArtifact.to) {
       // Extract client email from participants if possible
-      // For now, use a simple heuristic: check if client name appears in the to field
-      const clientNameLower = matter.client.toLowerCase();
-      const recipientEmails = sourceArtifact.to.join(" ").toLowerCase();
+      // Require exact local-part match to avoid false positives (e.g., jordan.smithson@ matching Jordan Smith)
+      const clientNameLower = matter.client.toLowerCase().trim();
+      const expectedLocalPart = clientNameLower.replace(/\s+/g, ".");
       
-      // Check if client name is in any of the recipient emails
-      if (recipientEmails.includes(clientNameLower.replace(/\s+/g, "."))) {
-        isClientApproval = true;
-      }
+      // Check if any recipient email has the exact local part
+      isClientApproval = sourceArtifact.to.some(email => {
+        const localPart = email.toLowerCase().split("@")[0];
+        return localPart === expectedLocalPart;
+      });
     }
 
     if (isClientApproval) {
@@ -319,10 +320,8 @@ export function deriveWaitingOnSlot(
     } else if (sourceArtifact) {
       // Structured data available but couldn't resolve to client - try text fallback
       waitingOnValue = deriveApprovalTypeFromText(latestWaiting.action, matter.client);
-      if (waitingOnValue !== "Client approval") {
-        // Text fallback used, not from structured data
-        derivedState = "INFERRED";
-      }
+      // Text fallback used, not from structured data, so always mark as INFERRED
+      derivedState = "INFERRED";
     } else {
       // No structured data - text fallback
       waitingOnValue = deriveApprovalTypeFromText(latestWaiting.action, matter.client);
@@ -351,13 +350,14 @@ export function deriveWaitingOnSlot(
 function deriveApprovalTypeFromText(action: string, clientName: string): string {
   const actionLower = action.toLowerCase();
   
-  // Normalize apostrophes (straight and curly)
-  const normalizedAction = actionLower.replace(/[\u2019\u0027]/g, "'");
-  const normalizedClient = clientName.toLowerCase().replace(/[\u2019\u0027]/g, "'");
+  // Normalize apostrophes (straight and curly) - handle all Unicode apostrophe variants
+  const normalizedAction = actionLower.replace(/[\u2019\u0027\u2018]/g, "'");
+  const normalizedClient = clientName.toLowerCase().replace(/[\u2019\u0027\u2018]/g, "'");
   
   // Check for named approver first (before keywords)
-  // Pattern: [Name]'s approval/decision/review
-  const possessiveMatch = normalizedAction.match(/([a-z]+(?:['-][a-z]+)*(?:\s+[a-z]+(?:['-][a-z]+)*)*)'s\s+(?:approval|decision|review)/);
+  // Look for pattern: requested/asked [Name]'s approval/decision/review
+  // Anchor to requested/asked to avoid capturing preceding words as part of the name
+  const possessiveMatch = normalizedAction.match(/(?:requested|asked)\s+([a-z]+(?:[-'][a-z]+)*(?:\s+[a-z]+(?:[-'][a-z]+)*)*)'s\s+(?:approval|decision|review)/);
   
   if (possessiveMatch) {
     const nameInAction = possessiveMatch[1].trim();
