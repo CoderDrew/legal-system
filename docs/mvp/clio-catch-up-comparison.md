@@ -47,7 +47,7 @@ MatterMind prioritizes evidence-grounded status reconstruction over activity sum
 | **Grounding / provenance** | Summary widget; user reviews against matter for verification. | Material claims linked to inspectable source evidence; unknowns explicitly surfaced. |
 | **Supersession / stale state** | Summarizes recent activity; supersession is implicit in the summary. | Explicit supersession reasoning: later events may supersede earlier operational significance. |
 | **Uncertainty / abstention** | Beta label; users should verify before relying. | Unknown, Inferred, Conflicting, and Supported evidence states are first-class outputs. |
-| **Source boundary** | Clio Manage matter data (documents, communications, matter updates). | Hypothesis: selected Clio matter + associated Clio evidence + matter-relevant email/attachments in authorized Microsoft 365 scope. (Unproven sufficiency.) |
+| **Source boundary** | Clio Manage matter data (documents, communications, matter updates). | Hypothesis: selected Clio matter + associated Clio evidence + matter-relevant email/attachments in authorized Microsoft 365 scope. Teams messages excluded from V1. (Unproven sufficiency.) |
 | **Write vs read-only** | Read-only summary; no operational actions. | Read-only; no autonomous actions. Clio remains system of record. |
 | **Action suggestions** | Clio AI Actions suggest next steps (drafting, billing, scheduling). | MatterMind V1 reports observed next action and owner from evidence; it does not generate action suggestions. |
 | **Evaluation risk focus** | Activity summary correctness; users verify before relying. | Wrong-matter contamination, authorization leakage, unsupported assertions, stale state, material omissions, weak citations. (See [v1-success-and-risk.md](./v1-success-and-risk.md).) |
@@ -66,7 +66,7 @@ Where the products overlap:
 
 - Both help users understand a matter's current state faster than manual reconstruction.
 - Both are read-only (no autonomous operational actions).
-- Both respect underlying permissions (Clio Manage permissions; MatterMind enforces source-system authorization).
+- Both respect underlying permissions (Clio Manage permissions; MatterMind relies on source-system authorization and may narrow but never expand it).
 
 MatterMind's differentiation is in its focus on **evidence-grounded current-state reconstruction with explicit uncertainty**, structured slot output, and a deliberate cross-system source hypothesis (Clio + email), rather than activity summarization within Clio Manage alone.
 
@@ -78,32 +78,27 @@ MatterMind's differentiation is in its focus on **evidence-grounded current-stat
 4. **Update this comparison:** As MatterMind's capabilities evolve and more slots become derived, this comparison should be revised to reflect actual product behavior rather than architectural intent.
 5. **Positioning:** MatterMind complements Clio by reconstructing current state from a broader evidence boundary (Clio + email hypothesis), with explicit grounding and uncertainty. It does not replace Clio Manage or Clio AI features.
 
-## Open confirmations for Drew
+## Decisions recorded
 
-The following architecture decisions require explicit confirmation before finalizing V1 source boundaries and evaluation scope:
+The following architecture decisions were confirmed by Drew on October 4, 2026, finalizing V1 source boundaries and evaluation scope:
 
 ### Teams messages
 
-**OPEN QUESTION:** Confirm whether MatterMind V1's evidence boundary includes Microsoft Teams messages (yes, no, or defer to later version).
+**Decision:** Microsoft Teams messages are **not included in V1**. Teams messages are deferred to a later version.
 
-If yes, cite any existing architecture note defining the Teams integration scope, permissions model, and matter-association strategy.
+The V1 evidence boundary hypothesis remains: selected Clio matter + associated Clio evidence + matter-relevant email and attachments in the requesting user's authorized Microsoft 365 scope.
 
-- **Confirmed:** ___
-- **Date:** ___
+**Confirmed by Drew, October 4, 2026.**
 
 ### Per-item permissions
 
-**OPEN QUESTION:** Confirm the per-item permissions model expectations for V1.
+**Decision:** V1 relies on source-system permissions only (Clio, Microsoft 365). MatterMind does not implement per-item access-control logic at the MatterMind layer in V1.
 
-Specifically:
+MatterMind must respect source-system permissions and never broaden a user's access. MatterMind-specific controls may be added later only if a real need emerges.
 
-- Does V1 rely solely on source-system (Clio, Microsoft 365) authorization scopes, or does MatterMind need additional per-document or per-message access-control logic?
-- Are there existing architecture decisions or constraints documented elsewhere in the repository?
+**Architectural rule:** "MatterMind permissions may narrow source permissions, but never expand them."
 
-Reference: Authorization precedes relevance ([mattermind-v1-architecture.md](../architecture/mattermind-v1-architecture.md)). MatterMind retrieves only evidence the requesting user is authorized to access through the underlying source system. This principle is established, but the precise per-item enforcement mechanism and any additional MatterMind-layer access controls remain open.
-
-- **Confirmed:** ___
-- **Date:** ___
+**Confirmed by Drew, October 4, 2026.**
 
 ## Maintenance
 
