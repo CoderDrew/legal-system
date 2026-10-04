@@ -9,7 +9,7 @@ import {
 } from "@/data/synthetic-matter";
 import { buildEligibleEvidenceSet } from "@/lib/evidence-processing";
 import { extractOperationalEvents } from "@/lib/operational-events";
-import { deriveCurrentStatusSlot } from "@/lib/current-state-reasoning";
+import { deriveCurrentStatusSlot, deriveLastImportantEventSlot } from "@/lib/current-state-reasoning";
 import { EvidencePanel } from "@/components/evidence-panel";
 import { StatusBrief } from "@/components/status-brief";
 import { ArrowRightIcon, DocumentIcon, LockIcon } from "@/components/icons";
@@ -33,12 +33,21 @@ const derivedCurrentStatusSlot = deriveCurrentStatusSlot(
   syntheticMatterBrief.matter,
 );
 
-// Build the brief with the derived current-status slot and predefined other slots
+// Derive the last-important-event slot from events (historical-event slot)
+const derivedLastImportantEventSlot = deriveLastImportantEventSlot(
+  operationalEvents,
+  syntheticMatterBrief.matter.id,
+  syntheticMatterBrief.matter,
+);
+
+// Build the brief with derived slots and predefined other slots
 const matterBrief = {
   ...syntheticMatterBrief,
-  claims: syntheticMatterBrief.claims.map((claim) =>
-    claim.id === "current-status" ? derivedCurrentStatusSlot : claim,
-  ),
+  claims: syntheticMatterBrief.claims.map((claim) => {
+    if (claim.id === "current-status") return derivedCurrentStatusSlot;
+    if (claim.id === "last-important-event") return derivedLastImportantEventSlot;
+    return claim;
+  }),
 };
 
 export function MatterMindApp() {
@@ -166,9 +175,9 @@ export function MatterMindApp() {
                   No status brief shown
                 </h2>
                 <p className="mt-2 text-sm leading-6 text-slate-600">
-                  This increment derives the current-status slot (supersession-type)
-                  from operational events. The other 6 slots remain predefined. Show
-                  the brief to review claims, evidence states, and source provenance.
+                  This increment derives the current-status and last-important-event
+                  slots from operational events. The other 5 slots remain predefined.
+                  Show the brief to review claims, evidence states, and source provenance.
                 </p>
               </div>
             </section>
