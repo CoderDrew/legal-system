@@ -10,7 +10,7 @@ import {
 import { syntheticCurrentStateGroundTruth } from "@/data/synthetic-current-state";
 import { buildEligibleEvidenceSet } from "@/lib/evidence-processing";
 import { extractOperationalEvents } from "@/lib/operational-events";
-import { deriveCurrentStatusSlot, deriveLastImportantEventSlot } from "@/lib/current-state-reasoning";
+import { deriveCurrentStatusSlot, deriveLastImportantEventSlot, deriveWaitingOnSlot } from "@/lib/current-state-reasoning";
 
 const evidenceProcessing = buildEligibleEvidenceSet({
   user: syntheticRequestingUser,
@@ -1290,4 +1290,819 @@ test("last-important-event: handles regex special characters in client name", ()
   // MF3: Should correctly handle parentheses without regex errors
   assert.ok(derived.value.includes("September 17, 2026"));
   assert.ok(!derived.value.includes("[REGEX ERROR]"));
+});
+
+// ===== Waiting-on slot tests =====
+
+test("derived waiting-on slot matches ground-truth expectation", () => {
+  const derived = deriveWaitingOnSlot(
+    extractedEvents,
+    syntheticMatters[0].id,
+    syntheticMatters[0],
+    evidenceProcessing.eligibleEvidence,
+  );
+  const expectation = syntheticCurrentStateGroundTruth.expectations.find(
+    (exp) => exp.slotId === "waiting-on",
+  );
+
+  assert.ok(expectation, "Ground truth has waiting-on expectation");
+
+  assert.equal(
+    derived.id,
+    "waiting-on",
+    "Derived slot has correct ID",
+  );
+  assert.equal(
+    derived.state,
+    expectation.expectedState,
+    "Derived state matches ground truth",
+  );
+  assert.equal(
+    derived.value,
+    expectation.expectedValue,
+    "Derived value matches ground truth",
+  );
+
+  // Map event IDs to artifact IDs for comparison
+  const eventToArtifactMap = new Map(
+    extractedEvents.map((event) => [
+      event.eventId,
+      event.provenance.sourceArtifactId,
+    ]),
+  );
+
+  const expectedArtifactIds = expectation.supportingEventIds
+    .map((eventId) => eventToArtifactMap.get(eventId))
+    .filter((id): id is string => id !== undefined)
+    .sort();
+  const derivedArtifactIds = [...derived.evidenceIds].sort();
+
+  assert.deepEqual(
+    derivedArtifactIds,
+    expectedArtifactIds,
+    "Derived evidence artifacts match ground truth supporting events",
+  );
+});
+
+test("waiting-on: open approval request is detected", () => {
+  const testMatter = {
+    id: "test-matter-wait-001",
+    matterNumber: "2026-WAIT-001",
+    name: "Open Wait Test",
+    client: "Test Client",
+    responsibleAttorney: "Test Attorney",
+    status: "Active" as const,
+    participantIds: ["test-client"],
+  };
+
+  const testEvidence = [
+    {
+      id: "test-artifact-wait-1",
+      sourceSystem: "Outlook" as const,
+      artifactType: "Email" as const,
+      timestamp: "2026-10-01T10:00:00Z",
+      from: "attorney@example.com",
+      to: ["test.client@example.com"],
+      subject: "Approval needed",
+      content: "Please approve the settlement terms",
+      participants: ["test-client"],
+      authorizedUserIds: ["test-user"],
+      association: {
+        evidenceId: "test-artifact-wait-1",
+        status: "ASSOCIATED" as const,
+        method: "EXPLICIT_MATTER_ID" as const,
+        reason: "test",
+      },
+      provenance: {
+        source: "Outlook" as const,
+        originalArtifactId: "test-artifact-wait-1",
+        associationMethod: "EXPLICIT_MATTER_ID" as const,
+        retrieved: "synthetic request execution" as const,
+      },
+    },
+  ];
+
+  const syntheticEvents: OperationalEvent[] = [
+    {
+      eventId: "test-approval-open",
+      matterId: "test-matter-wait-001",
+      eventType: "APPROVAL_REQUESTED",
+      occurredAt: "2026-10-01T10:00:00Z",
+      actor: "Attorney",
+      action: "Requested client approval of the settlement terms",
+      object: "Settlement terms",
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: "test-artifact-wait-1",
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-10-01T10:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "need your approval",
+      },
+    },
+  ];
+
+  const derived = deriveWaitingOnSlot(
+    syntheticEvents,
+    "test-matter-wait-001",
+    testMatter,
+    testEvidence,
+  );
+
+  assert.equal(derived.state, "SUPPORTED");
+  assert.equal(derived.value, "Client approval");
+  assert.deepEqual(derived.evidenceIds, ["test-artifact-wait-1"]);
+});
+
+test("waiting-on: waiting state superseded by later event", () => {
+  const testMatter = {
+    id: "test-matter-wait-002",
+    matterNumber: "2026-WAIT-002",
+    name: "Superseded Wait Test",
+    client: "Test Client 2",
+    responsibleAttorney: "Test Attorney 2",
+    status: "Active" as const,
+    participantIds: ["test-client-2"],
+  };
+
+  const testEvidence = [
+    {
+      id: "test-artifact-wait-2",
+      sourceSystem: "Outlook" as const,
+      artifactType: "Email" as const,
+      timestamp: "2026-09-01T10:00:00Z",
+      participants: [],
+      authorizedUserIds: [],
+      association: { evidenceId: "", status: "ASSOCIATED" as const, method: "EXPLICIT_MATTER_ID" as const, reason: "" },
+      provenance: { source: "Outlook" as const, originalArtifactId: "", associationMethod: "EXPLICIT_MATTER_ID" as const, retrieved: "synthetic request execution" as const },
+      content: "",
+    },
+    {
+      id: "test-artifact-wait-3",
+      sourceSystem: "Outlook" as const,
+      artifactType: "Email" as const,
+      timestamp: "2026-09-05T14:00:00Z",
+      participants: [],
+      authorizedUserIds: [],
+      association: { evidenceId: "", status: "ASSOCIATED" as const, method: "EXPLICIT_MATTER_ID" as const, reason: "" },
+      provenance: { source: "Outlook" as const, originalArtifactId: "", associationMethod: "EXPLICIT_MATTER_ID" as const, retrieved: "synthetic request execution" as const },
+      content: "",
+    },
+    {
+      id: "test-artifact-wait-4",
+      sourceSystem: "Outlook" as const,
+      artifactType: "Email" as const,
+      timestamp: "2026-09-06T11:00:00Z",
+      from: "attorney@example.com",
+      to: ["client2@example.com"],
+      participants: [],
+      authorizedUserIds: [],
+      association: { evidenceId: "", status: "ASSOCIATED" as const, method: "EXPLICIT_MATTER_ID" as const, reason: "" },
+      provenance: { source: "Outlook" as const, originalArtifactId: "", associationMethod: "EXPLICIT_MATTER_ID" as const, retrieved: "synthetic request execution" as const },
+      content: "",
+    },
+  ];
+
+  const syntheticEvents: OperationalEvent[] = [
+    {
+      eventId: "test-waiting-old",
+      matterId: "test-matter-wait-002",
+      eventType: "WAITING_STATE_REPORTED",
+      occurredAt: "2026-09-01T10:00:00Z",
+      actor: "Attorney",
+      action: "Waiting for documents",
+      object: "Documents",
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: "test-artifact-wait-2",
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-01T10:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "waiting for documents",
+      },
+    },
+    {
+      eventId: "test-doc-received",
+      matterId: "test-matter-wait-002",
+      eventType: "DOCUMENT_SENT",
+      occurredAt: "2026-09-05T14:00:00Z",
+      actor: "Client",
+      action: "Sent documents",
+      object: "Documents",
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: "test-artifact-wait-3",
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-05T14:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "documents attached",
+      },
+    },
+    {
+      eventId: "test-approval-new",
+      matterId: "test-matter-wait-002",
+      eventType: "APPROVAL_REQUESTED",
+      occurredAt: "2026-09-06T11:00:00Z",
+      actor: "Attorney",
+      action: "Requested client approval",
+      object: "Analysis",
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: "test-artifact-wait-4",
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-06T11:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "need approval",
+      },
+    },
+  ];
+
+  const derived = deriveWaitingOnSlot(
+    syntheticEvents,
+    "test-matter-wait-002",
+    testMatter,
+    testEvidence,
+  );
+
+  // The old waiting state should be superseded; should show the new approval request
+  assert.equal(derived.state, "SUPPORTED");
+  assert.equal(derived.value, "Client approval");
+  assert.deepEqual(derived.evidenceIds, ["test-artifact-wait-4"]);
+});
+
+test("waiting-on: multiple open waits, uses most recent", () => {
+  const testMatter = {
+    id: "test-matter-wait-003",
+    matterNumber: "2026-WAIT-003",
+    name: "Multiple Waits Test",
+    client: "Test Client 3",
+    responsibleAttorney: "Test Attorney 3",
+    status: "Active" as const,
+    participantIds: ["test-client-3"],
+  };
+
+  const testEvidence = [
+    {
+      id: "test-artifact-wait-5",
+      sourceSystem: "Outlook" as const,
+      artifactType: "Email" as const,
+      timestamp: "2026-09-10T10:00:00Z",
+      participants: [],
+      authorizedUserIds: [],
+      association: { evidenceId: "", status: "ASSOCIATED" as const, method: "EXPLICIT_MATTER_ID" as const, reason: "" },
+      provenance: { source: "Outlook" as const, originalArtifactId: "", associationMethod: "EXPLICIT_MATTER_ID" as const, retrieved: "synthetic request execution" as const },
+      content: "",
+    },
+    {
+      id: "test-artifact-wait-6",
+      sourceSystem: "Outlook" as const,
+      artifactType: "Email" as const,
+      timestamp: "2026-09-15T14:00:00Z",
+      from: "attorney@example.com",
+      to: ["client3@example.com"],
+      participants: [],
+      authorizedUserIds: [],
+      association: { evidenceId: "", status: "ASSOCIATED" as const, method: "EXPLICIT_MATTER_ID" as const, reason: "" },
+      provenance: { source: "Outlook" as const, originalArtifactId: "", associationMethod: "EXPLICIT_MATTER_ID" as const, retrieved: "synthetic request execution" as const },
+      content: "",
+    },
+  ];
+
+  const syntheticEvents: OperationalEvent[] = [
+    {
+      eventId: "test-approval-1",
+      matterId: "test-matter-wait-003",
+      eventType: "APPROVAL_REQUESTED",
+      occurredAt: "2026-09-10T10:00:00Z",
+      actor: "Attorney",
+      action: "Requested attorney approval",
+      object: "Brief",
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: "test-artifact-wait-5",
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-10T10:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "need attorney approval",
+      },
+    },
+    {
+      eventId: "test-approval-2",
+      matterId: "test-matter-wait-003",
+      eventType: "APPROVAL_REQUESTED",
+      occurredAt: "2026-09-15T14:00:00Z",
+      actor: "Attorney",
+      action: "Requested client approval",
+      object: "Settlement",
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: "test-artifact-wait-6",
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-15T14:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "need client approval",
+      },
+    },
+  ];
+
+  const derived = deriveWaitingOnSlot(
+    syntheticEvents,
+    "test-matter-wait-003",
+    testMatter,
+    testEvidence,
+  );
+
+  // Should use the most recent approval request (Sep 15)
+  assert.equal(derived.state, "SUPPORTED");
+  assert.equal(derived.value, "Client approval");
+  assert.deepEqual(derived.evidenceIds, ["test-artifact-wait-6"]);
+});
+
+test("waiting-on: no open waits returns UNKNOWN", () => {
+  const testMatter = {
+    id: "test-matter-wait-004",
+    matterNumber: "2026-WAIT-004",
+    name: "No Waits Test",
+    client: "Test Client 4",
+    responsibleAttorney: "Test Attorney 4",
+    status: "Active" as const,
+    participantIds: ["test-client-4"],
+  };
+
+  const testEvidence: any[] = [];
+
+  const syntheticEvents: OperationalEvent[] = [
+    {
+      eventId: "test-doc-only",
+      matterId: "test-matter-wait-004",
+      eventType: "DOCUMENT_SENT",
+      occurredAt: "2026-09-20T10:00:00Z",
+      actor: "Attorney",
+      action: "Sent memo",
+      object: "Memo",
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: "test-artifact-wait-7",
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-20T10:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "memo attached",
+      },
+    },
+  ];
+
+  const derived = deriveWaitingOnSlot(
+    syntheticEvents,
+    "test-matter-wait-004",
+    testMatter,
+    testEvidence,
+  );
+
+  assert.equal(derived.state, "UNKNOWN");
+  assert.equal(derived.value, "Unknown");
+  assert.deepEqual(derived.evidenceIds, []);
+});
+
+test("waiting-on: matter isolation - only uses events from specified matter", () => {
+  const testMatter1 = {
+    id: "test-matter-wait-005a",
+    matterNumber: "2026-WAIT-005A",
+    name: "Matter A",
+    client: "Client A",
+    responsibleAttorney: "Attorney A",
+    status: "Active" as const,
+    participantIds: ["client-a"],
+  };
+
+  const testMatter2 = {
+    id: "test-matter-wait-005b",
+    matterNumber: "2026-WAIT-005B",
+    name: "Matter B",
+    client: "Client B",
+    responsibleAttorney: "Attorney B",
+    status: "Active" as const,
+    participantIds: ["client-b"],
+  };
+
+  const testEvidence: any[] = [];
+
+  const syntheticEvents: OperationalEvent[] = [
+    {
+      eventId: "test-approval-matter-a",
+      matterId: "test-matter-wait-005a",
+      eventType: "APPROVAL_REQUESTED",
+      occurredAt: "2026-09-25T10:00:00Z",
+      actor: "Attorney A",
+      action: "Requested client approval",
+      object: "Settlement A",
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: "test-artifact-wait-8",
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-25T10:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "matter A approval",
+      },
+    },
+    {
+      eventId: "test-approval-matter-b",
+      matterId: "test-matter-wait-005b",
+      eventType: "APPROVAL_REQUESTED",
+      occurredAt: "2026-09-26T14:00:00Z",
+      actor: "Attorney B",
+      action: "Requested attorney approval",
+      object: "Brief B",
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: "test-artifact-wait-9",
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-26T14:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "matter B approval",
+      },
+    },
+  ];
+
+  const derivedA = deriveWaitingOnSlot(
+    syntheticEvents,
+    "test-matter-wait-005a",
+    testMatter1,
+    testEvidence,
+  );
+  const derivedB = deriveWaitingOnSlot(
+    syntheticEvents,
+    "test-matter-wait-005b",
+    testMatter2,
+    testEvidence,
+  );
+
+  // Matter A should only see its own approval
+  assert.equal(derivedA.state, "SUPPORTED");
+  assert.equal(derivedA.value, "Client approval");
+  assert.deepEqual(derivedA.evidenceIds, ["test-artifact-wait-8"]);
+
+  // Matter B should only see its own approval
+  assert.equal(derivedB.state, "SUPPORTED");
+  assert.equal(derivedB.value, "Attorney approval");
+  assert.deepEqual(derivedB.evidenceIds, ["test-artifact-wait-9"]);
+});
+
+test("waiting-on: no events returns UNKNOWN", () => {
+  const testMatter = {
+    id: "test-matter-wait-006",
+    matterNumber: "2026-WAIT-006",
+    name: "Empty Matter Test",
+    client: "Test Client 6",
+    responsibleAttorney: "Test Attorney 6",
+    status: "Active" as const,
+    participantIds: ["test-client-6"],
+  };
+
+  const testEvidence: any[] = [];
+
+  const derived = deriveWaitingOnSlot(
+    [],
+    "test-matter-wait-006",
+    testMatter,
+    testEvidence,
+  );
+
+  assert.equal(derived.state, "UNKNOWN");
+  assert.equal(derived.value, "Unknown");
+  assert.deepEqual(derived.evidenceIds, []);
+});
+
+// MF2: Edge cases for name matching and text fallback
+test("waiting-on MF2: short name substring does not match (Al vs Alan Smith)", () => {
+  const testMatter = {
+    id: "test-matter-mf2-001",
+    matterNumber: "2026-MF2-001",
+    name: "Short Name Test",
+    client: "Alan Smith",
+    responsibleAttorney: "Test Attorney",
+    status: "Active" as const,
+    participantIds: ["alan-smith"],
+  };
+
+  const testEvidence: any[] = [];
+
+  const syntheticEvents: OperationalEvent[] = [
+    {
+      eventId: "test-short-name",
+      matterId: "test-matter-mf2-001",
+      eventType: "APPROVAL_REQUESTED",
+      occurredAt: "2026-10-01T10:00:00Z",
+      actor: "Attorney",
+      action: "Requested Al's approval",
+      object: "Settlement",
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: "test-artifact-mf2-1",
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-10-01T10:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "Al's approval",
+      },
+    },
+  ];
+
+  const derived = deriveWaitingOnSlot(
+    syntheticEvents,
+    "test-matter-mf2-001",
+    testMatter,
+    testEvidence,
+  );
+
+  // "Al" should NOT match "Alan Smith" (whole-token matching)
+  // Should fall back to generic "Approval" and mark INFERRED
+  assert.equal(derived.state, "INFERRED");
+  assert.equal(derived.value, "Approval");
+});
+
+test("waiting-on MF2: curly apostrophe in client name", () => {
+  const testMatter = {
+    id: "test-matter-mf2-002",
+    matterNumber: "2026-MF2-002",
+    name: "Curly Apostrophe Test",
+    client: "Jordan Smith",
+    responsibleAttorney: "Test Attorney",
+    status: "Active" as const,
+    participantIds: ["jordan-smith"],
+  };
+
+  const testEvidence: any[] = [];
+
+  const syntheticEvents: OperationalEvent[] = [
+    {
+      eventId: "test-curly",
+      matterId: "test-matter-mf2-002",
+      eventType: "APPROVAL_REQUESTED",
+      occurredAt: "2026-10-01T10:00:00Z",
+      actor: "Attorney",
+      action: "Requested Jordan Smith's approval",
+      object: "Settlement",
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: "test-artifact-mf2-2",
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-10-01T10:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "approval needed",
+      },
+    },
+  ];
+
+  const derived = deriveWaitingOnSlot(
+    syntheticEvents,
+    "test-matter-mf2-002",
+    testMatter,
+    testEvidence,
+  );
+
+  // Curly apostrophe should be normalized and match
+  assert.equal(derived.state, "INFERRED");
+  assert.equal(derived.value, "Client approval");
+});
+
+test("waiting-on MF2: non-client approver (Ann vs Joanne Smith)", () => {
+  const testMatter = {
+    id: "test-matter-mf2-003",
+    matterNumber: "2026-MF2-003",
+    name: "Non-Client Test",
+    client: "Joanne Smith",
+    responsibleAttorney: "Test Attorney",
+    status: "Active" as const,
+    participantIds: ["joanne-smith"],
+  };
+
+  const testEvidence: any[] = [];
+
+  const syntheticEvents: OperationalEvent[] = [
+    {
+      eventId: "test-ann",
+      matterId: "test-matter-mf2-003",
+      eventType: "APPROVAL_REQUESTED",
+      occurredAt: "2026-10-01T10:00:00Z",
+      actor: "Attorney",
+      action: "Requested Ann's approval",
+      object: "Settlement",
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: "test-artifact-mf2-3",
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-10-01T10:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "Ann's approval",
+      },
+    },
+  ];
+
+  const derived = deriveWaitingOnSlot(
+    syntheticEvents,
+    "test-matter-mf2-003",
+    testMatter,
+    testEvidence,
+  );
+
+  // "Ann" should NOT match "Joanne Smith"
+  assert.equal(derived.state, "INFERRED");
+  assert.equal(derived.value, "Approval");
+});
+
+test("waiting-on MF2: name with apostrophe (O'Brien)", () => {
+  const testMatter = {
+    id: "test-matter-mf2-004",
+    matterNumber: "2026-MF2-004",
+    name: "O'Brien Test",
+    client: "Pat O'Brien",
+    responsibleAttorney: "Test Attorney",
+    status: "Active" as const,
+    participantIds: ["pat-obrien"],
+  };
+
+  const testEvidence: any[] = [];
+
+  const syntheticEvents: OperationalEvent[] = [
+    {
+      eventId: "test-obrien",
+      matterId: "test-matter-mf2-004",
+      eventType: "APPROVAL_REQUESTED",
+      occurredAt: "2026-10-01T10:00:00Z",
+      actor: "Attorney",
+      action: "Requested O'Brien's approval",
+      object: "Settlement",
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: "test-artifact-mf2-4",
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-10-01T10:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "O'Brien's approval",
+      },
+    },
+  ];
+
+  const derived = deriveWaitingOnSlot(
+    syntheticEvents,
+    "test-matter-mf2-004",
+    testMatter,
+    testEvidence,
+  );
+
+  // Should match O'Brien (surname)
+  assert.equal(derived.state, "INFERRED");
+  assert.equal(derived.value, "Client approval");
+});
+
+test("waiting-on MF2: name with hyphen (Mary-Kate)", () => {
+  const testMatter = {
+    id: "test-matter-mf2-005",
+    matterNumber: "2026-MF2-005",
+    name: "Hyphen Test",
+    client: "Mary-Kate Olsen",
+    responsibleAttorney: "Test Attorney",
+    status: "Active" as const,
+    participantIds: ["mary-kate"],
+  };
+
+  const testEvidence: any[] = [];
+
+  const syntheticEvents: OperationalEvent[] = [
+    {
+      eventId: "test-hyphen",
+      matterId: "test-matter-mf2-005",
+      eventType: "APPROVAL_REQUESTED",
+      occurredAt: "2026-10-01T10:00:00Z",
+      actor: "Attorney",
+      action: "Requested Mary-Kate Olsen's approval",
+      object: "Settlement",
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: "test-artifact-mf2-5",
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-10-01T10:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "Mary-Kate's approval",
+      },
+    },
+  ];
+
+  const derived = deriveWaitingOnSlot(
+    syntheticEvents,
+    "test-matter-mf2-005",
+    testMatter,
+    testEvidence,
+  );
+
+  // Should match full name with hyphen
+  assert.equal(derived.state, "INFERRED");
+  assert.equal(derived.value, "Client approval");
+});
+
+test("waiting-on MF2: 'approve' phrasing without 'approval' keyword", () => {
+  const testMatter = {
+    id: "test-matter-mf2-006",
+    matterNumber: "2026-MF2-006",
+    name: "Approve Phrasing Test",
+    client: "Jordan Smith",
+    responsibleAttorney: "Test Attorney",
+    status: "Active" as const,
+    participantIds: ["jordan-smith"],
+  };
+
+  const testEvidence: any[] = [];
+
+  const syntheticEvents: OperationalEvent[] = [
+    {
+      eventId: "test-approve",
+      matterId: "test-matter-mf2-006",
+      eventType: "APPROVAL_REQUESTED",
+      occurredAt: "2026-10-01T10:00:00Z",
+      actor: "Attorney",
+      action: "Asked Jordan Smith to approve the revised language",
+      object: "Revised settlement language",
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: "test-artifact-mf2-6",
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-10-01T10:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "to approve",
+      },
+    },
+  ];
+
+  const derived = deriveWaitingOnSlot(
+    syntheticEvents,
+    "test-matter-mf2-006",
+    testMatter,
+    testEvidence,
+  );
+
+  // Should still detect as approval
+  assert.equal(derived.state, "INFERRED");
+  assert.equal(derived.value, "Approval");
+});
+
+// MF3: Stale approval test
+test("waiting-on MF3: approval with later substantive event is INFERRED", () => {
+  const testMatter = {
+    id: "test-matter-mf3-001",
+    matterNumber: "2026-MF3-001",
+    name: "Stale Approval Test",
+    client: "Test Client",
+    responsibleAttorney: "Test Attorney",
+    status: "Active" as const,
+    participantIds: ["test-client"],
+  };
+
+  const testEvidence: any[] = [];
+
+  const syntheticEvents: OperationalEvent[] = [
+    {
+      eventId: "test-approval-early",
+      matterId: "test-matter-mf3-001",
+      eventType: "APPROVAL_REQUESTED",
+      occurredAt: "2026-09-17T10:00:00Z",
+      actor: "Attorney",
+      action: "Requested client approval",
+      object: "Settlement",
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: "test-artifact-mf3-1",
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-17T10:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "approval needed",
+      },
+    },
+    {
+      eventId: "test-doc-later",
+      matterId: "test-matter-mf3-001",
+      eventType: "DOCUMENT_SENT",
+      occurredAt: "2026-10-01T14:00:00Z",
+      actor: "Attorney",
+      action: "Sent revised document",
+      object: "Revised document",
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: "test-artifact-mf3-2",
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-10-01T14:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "revised",
+      },
+    },
+  ];
+
+  const derived = deriveWaitingOnSlot(
+    syntheticEvents,
+    "test-matter-mf3-001",
+    testMatter,
+    testEvidence,
+  );
+
+  // Approval with later substantive event should be INFERRED, not SUPPORTED
+  assert.equal(derived.state, "INFERRED");
+  assert.equal(derived.value, "Client approval");
 });

@@ -1,4 +1,5 @@
 import type {
+  EligibleEvidenceItem,
   OperationalEvent,
   StatusClaim,
   SyntheticMatter,
@@ -11,11 +12,11 @@ import type {
  * substantive operational event and formats it with date and description.
  *
  * Selection rule: The most recent event by timestamp (with eventId as tie-breaker).
- * All operational events are considered "important" for this slot.
+ * Record-keeping events (MATTER_STATUS_RECORDED, RESPONSIBILITY_RECORDED) are excluded.
  *
  * Format: "{Month} {Day}, {Year} — {Actor role} {normalized action}."
  * Actor normalization: Use "Attorney" if actor matches matter's responsible attorney.
- * Action normalization: Replace client name mentions with "client", simplify phrasing.
+ * Action normalization: Template-based for APPROVAL_REQUESTED, raw text for others.
  *
  * Deterministic: Uses event timestamps, actor, action, and matter context fields.
  * No AI, models, or fixture-specific strings.
@@ -25,7 +26,7 @@ export function deriveLastImportantEventSlot(
   matterId: string,
   matter: SyntheticMatter,
 ): StatusClaim {
-  // MF2: Exclude record-keeping event types
+  // Exclude record-keeping event types
   const matterEvents = events.filter((e) => 
     e.matterId === matterId && 
     e.eventType !== "MATTER_STATUS_RECORDED" && 
@@ -83,7 +84,7 @@ export function deriveLastImportantEventSlot(
     actorDisplay = "";
   }
 
-  // MF1: Template-based description for structured event types
+  // Template-based description for structured event types
   let description: string;
   
   if (latestEvent.eventType === "APPROVAL_REQUESTED") {
@@ -92,7 +93,7 @@ export function deriveLastImportantEventSlot(
     const actor = actorDisplay || latestEvent.actor || "Someone";
     const object = latestEvent.object;
     
-    // MF3: Determine if client name appears in action using safe includes check
+    // Determine if client name appears in action using safe includes check
     const clientName = matter.client.toLowerCase();
     const actionLower = latestEvent.action.toLowerCase();
     
@@ -134,6 +135,260 @@ export function deriveLastImportantEventSlot(
     state: "SUPPORTED",
     evidenceIds: [latestEvent.provenance.sourceArtifactId],
   };
+}
+
+/**
+ * Derives the waiting-on slot from operational events.
+ *
+ * This is a supersession-type slot: waiting states (APPROVAL_REQUESTED,
+ * WAITING_STATE_REPORTED) remain open until resolved or superseded by a later event.
+ *
+ * Resolution rules:
+ * - APPROVAL_REQUESTED is resolved by a later event indicating the approval was received
+ *   (not yet implemented - approvals stay open in V1)
+ * - WAITING_STATE_REPORTED is superseded by events that fulfill the wait
+ *   (DOCUMENT_SENT, APPROVAL_REQUESTED, etc.)
+ *
+ * Evidence states:
+ * - SUPPORTED: An open waiting state is directly evidenced, with no later substantive events
+ * - INFERRED: Waiting state derived via reasoning (stale approval or text fallback)
+ * - UNKNOWN: No open wait or evidence is insufficient
+ *
+ * Deterministic: Uses event timestamps, eventType, and structured recipient/participant
+ * matching. Text fallback (marked INFERRED) only when structured data is absent.
+ */
+export function deriveWaitingOnSlot(
+  events: OperationalEvent[],
+  matterId: string,
+  matter: SyntheticMatter,
+  eligibleEvidence: EligibleEvidenceItem[],
+): StatusClaim {
+  const matterEvents = events.filter((e) => e.matterId === matterId);
+
+  if (matterEvents.length === 0) {
+    return {
+      id: "waiting-on",
+      label: "Waiting On",
+      value: "Unknown",
+      state: "UNKNOWN",
+      evidenceIds: [],
+    };
+  }
+
+  // Find all waiting-type events
+  const waitingEvents = matterEvents.filter(
+    (e) => 
+      e.eventType === "APPROVAL_REQUESTED" || 
+      e.eventType === "WAITING_STATE_REPORTED"
+  );
+
+  if (waitingEvents.length === 0) {
+    return {
+      id: "waiting-on",
+      label: "Waiting On",
+      value: "Unknown",
+      state: "UNKNOWN",
+      evidenceIds: [],
+    };
+  }
+
+  // Check which waiting events are still open (not superseded)
+  const openWaitingEvents: OperationalEvent[] = [];
+
+  for (const waitingEvent of waitingEvents) {
+    const waitingTime = new Date(
+      waitingEvent.occurredAt ?? waitingEvent.provenance.sourceRecordedAt
+    ).getTime();
+
+    let isSuperseded = false;
+
+    // WAITING_STATE_REPORTED is superseded by later substantive events
+    if (waitingEvent.eventType === "WAITING_STATE_REPORTED") {
+      for (const event of matterEvents) {
+        if (
+          event.eventType === "DOCUMENT_SENT" ||
+          event.eventType === "APPROVAL_REQUESTED" ||
+          event.eventType === "DOCUMENT_REVIEWED"
+        ) {
+          const eventTime = new Date(
+            event.occurredAt ?? event.provenance.sourceRecordedAt
+          ).getTime();
+          const supersedes =
+            eventTime > waitingTime ||
+            (eventTime === waitingTime && event.eventId > waitingEvent.eventId);
+
+          if (supersedes) {
+            isSuperseded = true;
+            break;
+          }
+        }
+      }
+    }
+
+    // APPROVAL_REQUESTED stays open (no resolution logic yet in V1)
+    // In a future version, check for approval-received events here
+
+    if (!isSuperseded) {
+      openWaitingEvents.push(waitingEvent);
+    }
+  }
+
+  if (openWaitingEvents.length === 0) {
+    return {
+      id: "waiting-on",
+      label: "Waiting On",
+      value: "Unknown",
+      state: "UNKNOWN",
+      evidenceIds: [],
+    };
+  }
+
+  // Get the most recent open waiting event
+  const latestWaiting = openWaitingEvents.reduce((latest, current) => {
+    const latestTime = new Date(
+      latest.occurredAt ?? latest.provenance.sourceRecordedAt
+    ).getTime();
+    const currentTime = new Date(
+      current.occurredAt ?? current.provenance.sourceRecordedAt
+    ).getTime();
+
+    if (currentTime > latestTime) return current;
+    if (currentTime < latestTime) return latest;
+
+    // Timestamps are equal - prefer events with explicit occurredAt
+    if (current.occurredAt !== null && latest.occurredAt === null) return current;
+    if (current.occurredAt === null && latest.occurredAt !== null) return latest;
+
+    // Both null or both non-null: tie-break with eventId
+    return current.eventId > latest.eventId ? current : latest;
+  });
+
+  // MF3: Check if there's a strictly later substantive event (makes it INFERRED, not SUPPORTED)
+  const latestWaitingTime = new Date(
+    latestWaiting.occurredAt ?? latestWaiting.provenance.sourceRecordedAt
+  ).getTime();
+
+  let hasLaterSubstantiveEvent = false;
+  if (latestWaiting.eventType === "APPROVAL_REQUESTED") {
+    for (const event of matterEvents) {
+      if (
+        event.eventType === "DOCUMENT_SENT" ||
+        event.eventType === "DOCUMENT_REVIEWED" ||
+        event.eventType === "MATTER_STATUS_RECORDED" ||
+        event.eventType === "APPROVAL_REQUESTED"
+      ) {
+        const eventTime = new Date(
+          event.occurredAt ?? event.provenance.sourceRecordedAt
+        ).getTime();
+        
+        // Strictly later (not equal)
+        if (eventTime > latestWaitingTime) {
+          hasLaterSubstantiveEvent = true;
+          break;
+        }
+      }
+    }
+  }
+
+  // MF2: Derive the waiting-on value from structured data, not action text parsing
+  let waitingOnValue: string;
+  let derivedState: "SUPPORTED" | "INFERRED" = hasLaterSubstantiveEvent ? "INFERRED" : "SUPPORTED";
+
+  if (latestWaiting.eventType === "APPROVAL_REQUESTED") {
+    // Try to resolve from structured data: email recipient to client participant
+    const sourceArtifact = eligibleEvidence.find(
+      (e) => e.id === latestWaiting.provenance.sourceArtifactId
+    );
+
+    let isClientApproval = false;
+
+    if (sourceArtifact && sourceArtifact.artifactType === "Email" && sourceArtifact.to) {
+      // Extract client email from participants if possible
+      // For now, use a simple heuristic: check if client name appears in the to field
+      const clientNameLower = matter.client.toLowerCase();
+      const recipientEmails = sourceArtifact.to.join(" ").toLowerCase();
+      
+      // Check if client name is in any of the recipient emails
+      if (recipientEmails.includes(clientNameLower.replace(/\s+/g, "."))) {
+        isClientApproval = true;
+      }
+    }
+
+    if (isClientApproval) {
+      waitingOnValue = "Client approval";
+    } else if (sourceArtifact) {
+      // Structured data available but couldn't resolve to client - try text fallback
+      waitingOnValue = deriveApprovalTypeFromText(latestWaiting.action, matter.client);
+      if (waitingOnValue !== "Client approval") {
+        // Text fallback used, not from structured data
+        derivedState = "INFERRED";
+      }
+    } else {
+      // No structured data - text fallback
+      waitingOnValue = deriveApprovalTypeFromText(latestWaiting.action, matter.client);
+      derivedState = "INFERRED";
+    }
+  } else {
+    // WAITING_STATE_REPORTED - use the object
+    waitingOnValue = latestWaiting.object || "Response";
+  }
+
+  return {
+    id: "waiting-on",
+    label: "Waiting On",
+    value: waitingOnValue,
+    state: derivedState,
+    evidenceIds: [latestWaiting.provenance.sourceArtifactId],
+  };
+}
+
+/**
+ * Helper: Derive approval type from action text (fallback when structured data unavailable).
+ * Returns "Client approval", "Attorney approval", "Review", "Decision", or "Approval".
+ * 
+ * Checks named approver before keywords, normalizes apostrophes, uses whole-token matching.
+ */
+function deriveApprovalTypeFromText(action: string, clientName: string): string {
+  const actionLower = action.toLowerCase();
+  
+  // Normalize apostrophes (straight and curly)
+  const normalizedAction = actionLower.replace(/[\u2019\u0027]/g, "'");
+  const normalizedClient = clientName.toLowerCase().replace(/[\u2019\u0027]/g, "'");
+  
+  // Check for named approver first (before keywords)
+  // Pattern: [Name]'s approval/decision/review
+  const possessiveMatch = normalizedAction.match(/([a-z]+(?:['-][a-z]+)*(?:\s+[a-z]+(?:['-][a-z]+)*)*)'s\s+(?:approval|decision|review)/);
+  
+  if (possessiveMatch) {
+    const nameInAction = possessiveMatch[1].trim();
+    
+    // Check if the name matches the client (full name or surname)
+    // Use whole-token matching
+    const clientTokens = normalizedClient.split(/\s+/);
+    const surname = clientTokens[clientTokens.length - 1];
+    
+    if (nameInAction === normalizedClient || nameInAction === surname) {
+      return "Client approval";
+    } else {
+      // Non-client approval
+      return "Approval";
+    }
+  }
+  
+  // Keyword-based detection (no named approver found)
+  if (actionLower.includes("client approval") || actionLower.includes("client's approval")) {
+    return "Client approval";
+  } else if (actionLower.includes("attorney approval") || actionLower.includes("attorney's approval")) {
+    return "Attorney approval";
+  } else if (actionLower.includes("review")) {
+    return "Review";
+  } else if (actionLower.includes("decision")) {
+    return "Decision";
+  } else if (actionLower.includes("approval") || actionLower.includes("approve")) {
+    return "Approval";
+  } else {
+    return "Approval";
+  }
 }
 
 /**
