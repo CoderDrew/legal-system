@@ -3637,3 +3637,91 @@ test("next-action: firm-domain sender is our side even when the actor name is un
     "Firm-domain senders must be treated as our side; this assertion is load-bearing for isDocumentFromClientOrOwnSide",
   );
 });
+
+test("next-action: object text keeps original proper-noun casing", () => {
+  const waitingMatter = makeNextActionMatter("test-matter-na-object-waiting");
+  const waitingDerived = deriveNextActionSlot(
+    [
+      makeNextActionEvent({
+        eventId: "test-waiting-judge-lee",
+        matterId: "test-matter-na-object-waiting",
+        eventType: "WAITING_STATE_REPORTED",
+        occurredAt: "2026-09-15T10:00:00Z",
+        actor: "Attorney",
+        action: "Reported waiting for Judge Lee's ruling.",
+        object: "Judge Lee's ruling",
+        provenance: {
+          sourceArtifactId: "test-artifact-object-waiting",
+          sourceSystem: "Outlook",
+          sourceRecordedAt: "2026-09-15T10:00:00Z",
+          associationMethod: "EXPLICIT_MATTER_ID",
+          evidenceExcerpt: "waiting for Judge Lee's ruling",
+        },
+      }),
+    ],
+    "test-matter-na-object-waiting",
+    waitingMatter,
+    [],
+    syntheticRequestingUser,
+  );
+
+  assert.ok(
+    waitingDerived.value.includes("Judge Lee's ruling"),
+    "Waiting-state object must keep proper-noun casing",
+  );
+  assert.ok(
+    !waitingDerived.value.includes("judge lee's ruling"),
+    "Waiting-state object must not be lowercased",
+  );
+
+  const approvalMatter = makeNextActionMatter("test-matter-na-object-approval");
+  const approvalDerived = deriveNextActionSlot(
+    [
+      makeNextActionEvent({
+        eventId: "test-doc-object-acme",
+        matterId: "test-matter-na-object-approval",
+        eventType: "DOCUMENT_SENT",
+        occurredAt: "2026-09-16T10:00:00Z",
+        actor: "Jordan Smith",
+        action: "Sent comments on Acme Corp.",
+        object: "Acme Corp",
+        provenance: {
+          sourceArtifactId: "test-artifact-object-doc",
+          sourceSystem: "Outlook",
+          sourceRecordedAt: "2026-09-16T10:00:00Z",
+          associationMethod: "EXPLICIT_MATTER_ID",
+          evidenceExcerpt: "Acme Corp",
+        },
+      }),
+      makeNextActionEvent({
+        eventId: "test-approval-object-acme",
+        matterId: "test-matter-na-object-approval",
+        eventType: "APPROVAL_REQUESTED",
+        occurredAt: "2026-09-17T12:00:00Z",
+        actor: "Attorney",
+        action: "Requested client approval of Acme Corp.",
+        object: "Acme Corp",
+        provenance: {
+          sourceArtifactId: "test-artifact-object-approval",
+          sourceSystem: "Outlook",
+          sourceRecordedAt: "2026-09-17T12:00:00Z",
+          associationMethod: "EXPLICIT_MATTER_ID",
+          evidenceExcerpt: "approval of Acme Corp",
+        },
+      }),
+    ],
+    "test-matter-na-object-approval",
+    approvalMatter,
+    [],
+    syntheticRequestingUser,
+  );
+
+  assert.ok(
+    approvalDerived.value.includes("Acme Corp"),
+    "Approval object must keep proper-noun casing",
+  );
+  assert.ok(
+    !approvalDerived.value.includes("acme corp"),
+    "Approval object must not be lowercased",
+  );
+});

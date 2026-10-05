@@ -997,9 +997,7 @@ function inferNextActionFromLatestEvent(
 function nextActionAfterApprovalWithoutExternalSender(
   latestWaiting: OperationalEvent
 ): StatusClaim {
-  const approvalObject = latestWaiting.object
-    ? latestWaiting.object.toLowerCase()
-    : null;
+  const approvalObject = latestWaiting.object;
   return {
     id: "next-action",
     label: "Next Action",
@@ -1118,7 +1116,7 @@ export function deriveNextActionSlot(
     return {
       id: "next-action",
       label: "Next Action",
-      value: `Review and respond after receiving ${waitingFor.toLowerCase()}.`,
+      value: `Review and respond after receiving ${waitingFor}.`,
       state: "INFERRED",
       evidenceIds: [latestWaiting.provenance.sourceArtifactId],
     };
