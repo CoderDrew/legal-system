@@ -9,7 +9,7 @@ import {
 } from "@/data/synthetic-matter";
 import { buildEligibleEvidenceSet } from "@/lib/evidence-processing";
 import { extractOperationalEvents } from "@/lib/operational-events";
-import { deriveCurrentStatusSlot, deriveLastImportantEventSlot } from "@/lib/current-state-reasoning";
+import { deriveCurrentStatusSlot, deriveLastImportantEventSlot, deriveWaitingOnSlot } from "@/lib/current-state-reasoning";
 import { EvidencePanel } from "@/components/evidence-panel";
 import { StatusBrief } from "@/components/status-brief";
 import { ArrowRightIcon, DocumentIcon, LockIcon } from "@/components/icons";
@@ -26,18 +26,24 @@ const operationalEvents = extractOperationalEvents({
   matterId: syntheticMatterBrief.matter.id,
 });
 
-// Derive the current-status slot from events (supersession-type slot)
+// Derive slots from events
 const derivedCurrentStatusSlot = deriveCurrentStatusSlot(
   operationalEvents,
   syntheticMatterBrief.matter.id,
   syntheticMatterBrief.matter,
 );
 
-// Derive the last-important-event slot from events (historical-event slot)
 const derivedLastImportantEventSlot = deriveLastImportantEventSlot(
   operationalEvents,
   syntheticMatterBrief.matter.id,
   syntheticMatterBrief.matter,
+);
+
+const derivedWaitingOnSlot = deriveWaitingOnSlot(
+  operationalEvents,
+  syntheticMatterBrief.matter.id,
+  syntheticMatterBrief.matter,
+  evidenceProcessing.eligibleEvidence,
 );
 
 // Build the brief with derived slots and predefined other slots
@@ -46,6 +52,7 @@ const matterBrief = {
   claims: syntheticMatterBrief.claims.map((claim) => {
     if (claim.id === "current-status") return derivedCurrentStatusSlot;
     if (claim.id === "last-important-event") return derivedLastImportantEventSlot;
+    if (claim.id === "waiting-on") return derivedWaitingOnSlot;
     return claim;
   }),
 };
@@ -175,9 +182,9 @@ export function MatterMindApp() {
                   No status brief shown
                 </h2>
                 <p className="mt-2 text-sm leading-6 text-slate-600">
-                  This increment derives the current-status and last-important-event
-                  slots from operational events. The other 5 slots remain predefined.
-                  Show the brief to review claims, evidence states, and source provenance.
+                  This increment derives the current-status, last-important-event, and waiting-on slots
+                  from operational events. The other 4 slots remain predefined. Show
+                  the brief to review claims, evidence states, and source provenance.
                 </p>
               </div>
             </section>
