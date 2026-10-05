@@ -2380,6 +2380,7 @@ test("derived next-action slot matches ground-truth expectation", () => {
     syntheticMatters[0],
     evidenceProcessing.eligibleEvidence,
     syntheticRequestingUser,
+    syntheticCurrentStateGroundTruth.asOf,
   );
   const expectation = syntheticCurrentStateGroundTruth.expectations.find(
     (exp) => exp.slotId === "next-action",
@@ -2478,6 +2479,7 @@ test("next-action: open approval request with document context returns INFERRED"
     testMatter,
     [],
     syntheticRequestingUser,
+    NEXT_ACTION_AS_OF,
   );
 
   assert.equal(derived.state, "INFERRED", "State should be INFERRED");
@@ -2533,6 +2535,7 @@ test("next-action: open waiting-state returns INFERRED", () => {
     testMatter,
     [],
     syntheticRequestingUser,
+    NEXT_ACTION_AS_OF,
   );
 
   assert.equal(derived.state, "INFERRED", "State should be INFERRED");
@@ -2601,6 +2604,7 @@ test("next-action: superseded waiting-state is ignored", () => {
     testMatter,
     [],
     syntheticRequestingUser,
+    NEXT_ACTION_AS_OF,
   );
 
   // The waiting state is superseded by document sent, so we infer from the document
@@ -2680,6 +2684,7 @@ test("next-action: matter isolation works correctly", () => {
     testMatter1,
     [],
     syntheticRequestingUser,
+    NEXT_ACTION_AS_OF,
   );
 
   const derivedMatter2 = deriveNextActionSlot(
@@ -2688,6 +2693,7 @@ test("next-action: matter isolation works correctly", () => {
     testMatter2,
     [],
     syntheticRequestingUser,
+    NEXT_ACTION_AS_OF,
   );
 
   // Each matter should only see its own events
@@ -2727,6 +2733,7 @@ test("next-action: no events returns UNKNOWN", () => {
     testMatter,
     [],
     syntheticRequestingUser,
+    NEXT_ACTION_AS_OF,
   );
 
   assert.equal(derived.state, "UNKNOWN", "State should be UNKNOWN");
@@ -2788,6 +2795,7 @@ test("next-action: approval with court as sender", () => {
     testMatter,
     [],
     syntheticRequestingUser,
+    NEXT_ACTION_AS_OF,
   );
 
   assert.equal(derived.state, "INFERRED", "State should be INFERRED");
@@ -2838,6 +2846,7 @@ test("next-action: only document-reviewed event (no approval)", () => {
     testMatter,
     [],
     syntheticRequestingUser,
+    NEXT_ACTION_AS_OF,
   );
 
   assert.equal(derived.state, "INFERRED", "State should be INFERRED");
@@ -2907,6 +2916,7 @@ test("next-action: client name mentioned in approval action", () => {
     testMatter,
     [],
     syntheticRequestingUser,
+    NEXT_ACTION_AS_OF,
   );
 
   assert.equal(derived.state, "INFERRED", "State should be INFERRED");
@@ -2974,6 +2984,7 @@ test("next-action: actor 'Courtney Smith' is not treated as court", () => {
     testMatter,
     [],
     syntheticRequestingUser,
+    NEXT_ACTION_AS_OF,
   );
 
   assert.equal(derived.state, "INFERRED", "State should be INFERRED");
@@ -3019,6 +3030,8 @@ function makeNextActionEvent(
 const SMITH_STYLE_SENTENCE =
   "Respond to opposing counsel after the client makes a decision.";
 
+const NEXT_ACTION_AS_OF = "2026-09-17T23:59:59Z";
+
 test("next-action: organization name keeps its original casing", () => {
   const testMatter = makeNextActionMatter("test-matter-na-011");
   const syntheticEvents: OperationalEvent[] = [
@@ -3062,6 +3075,7 @@ test("next-action: organization name keeps its original casing", () => {
     testMatter,
     [],
     syntheticRequestingUser,
+    NEXT_ACTION_AS_OF,
   );
 
   assert.equal(derived.state, "INFERRED");
@@ -3118,6 +3132,7 @@ test("next-action: client-sent latest document does not say Respond to client", 
     testMatter,
     [],
     syntheticRequestingUser,
+    NEXT_ACTION_AS_OF,
   );
 
   assert.ok(
@@ -3173,6 +3188,7 @@ test("next-action: own-attorney-sent latest document does not say Respond to our
     testMatter,
     [],
     syntheticRequestingUser,
+    NEXT_ACTION_AS_OF,
   );
 
   assert.ok(
@@ -3245,7 +3261,7 @@ test("next-action: later Settled status does not drive the Smith-style sentence"
     }),
   ];
 
-  const derived = deriveNextActionSlot(syntheticEvents, matterId, testMatter, [], syntheticRequestingUser);
+  const derived = deriveNextActionSlot(syntheticEvents, matterId, testMatter, [], syntheticRequestingUser, NEXT_ACTION_AS_OF);
   assert.notEqual(derived.value, SMITH_STYLE_SENTENCE);
   assert.ok(
     !derived.value.includes("Respond to opposing counsel after the client makes a decision"),
@@ -3276,7 +3292,7 @@ test("next-action: later Closed status does not drive the Smith-style sentence",
     }),
   ];
 
-  const derived = deriveNextActionSlot(syntheticEvents, matterId, testMatter, [], syntheticRequestingUser);
+  const derived = deriveNextActionSlot(syntheticEvents, matterId, testMatter, [], syntheticRequestingUser, NEXT_ACTION_AS_OF);
   assert.notEqual(derived.value, SMITH_STYLE_SENTENCE);
   assert.ok(
     !derived.value.includes("Respond to opposing counsel after the client makes a decision"),
@@ -3307,7 +3323,7 @@ test("next-action: later client document does not drive the Smith-style sentence
     }),
   ];
 
-  const derived = deriveNextActionSlot(syntheticEvents, matterId, testMatter, [], syntheticRequestingUser);
+  const derived = deriveNextActionSlot(syntheticEvents, matterId, testMatter, [], syntheticRequestingUser, NEXT_ACTION_AS_OF);
   assert.notEqual(derived.value, SMITH_STYLE_SENTENCE);
   assert.ok(
     !derived.value.includes("Respond to opposing counsel after the client makes a decision"),
@@ -3338,7 +3354,9 @@ test("next-action: about 6 months of silence does not drive the Smith-style sent
     }),
   ];
 
-  const derived = deriveNextActionSlot(syntheticEvents, matterId, testMatter, [], syntheticRequestingUser);
+  const approvalTime = new Date("2026-09-17T12:00:00Z").getTime();
+  const staleAsOf = new Date(approvalTime + 180 * 24 * 60 * 60 * 1000).toISOString();
+  const derived = deriveNextActionSlot(syntheticEvents, matterId, testMatter, [], syntheticRequestingUser, staleAsOf);
   assert.notEqual(derived.value, SMITH_STYLE_SENTENCE);
   assert.ok(
     !derived.value.includes("Respond to opposing counsel after the client makes a decision"),
@@ -3421,6 +3439,7 @@ test("next-action and waiting-on agree on who is being waited on", () => {
     testMatter,
     testEvidence,
     syntheticRequestingUser,
+    NEXT_ACTION_AS_OF,
   );
 
   assert.equal(waiting.value, "Client approval");
@@ -3510,6 +3529,7 @@ test("next-action: requesting-user sender is our side, not a respond-to target",
     testMatter,
     [],
     syntheticRequestingUser,
+    NEXT_ACTION_AS_OF,
   );
 
   assert.ok(
@@ -3562,6 +3582,7 @@ test("next-action: Firm paralegal sender is our side, not a respond-to target", 
     testMatter,
     [],
     syntheticRequestingUser,
+    NEXT_ACTION_AS_OF,
   );
 
   assert.ok(
@@ -3630,6 +3651,7 @@ test("next-action: firm-domain sender is our side even when the actor name is un
     testMatter,
     testEvidence,
     syntheticRequestingUser,
+    NEXT_ACTION_AS_OF,
   );
 
   assert.ok(
@@ -3663,6 +3685,7 @@ test("next-action: object text keeps original proper-noun casing", () => {
     waitingMatter,
     [],
     syntheticRequestingUser,
+    NEXT_ACTION_AS_OF,
   );
 
   assert.ok(
@@ -3714,6 +3737,7 @@ test("next-action: object text keeps original proper-noun casing", () => {
     approvalMatter,
     [],
     syntheticRequestingUser,
+    NEXT_ACTION_AS_OF,
   );
 
   assert.ok(
@@ -3724,4 +3748,84 @@ test("next-action: object text keeps original proper-noun casing", () => {
     !approvalDerived.value.includes("acme corp"),
     "Approval object must not be lowercased",
   );
+});
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+test("next-action: approval is stale after 180 days with no later events", () => {
+  const matterId = "test-matter-na-silence-no-later-events";
+  const testMatter = makeNextActionMatter(matterId);
+  const syntheticEvents = smithStyleApprovalEvents(matterId);
+  const approvalTime = new Date("2026-09-17T12:00:00Z").getTime();
+  const asOf = new Date(approvalTime + 180 * DAY_MS).toISOString();
+
+  const derived = deriveNextActionSlot(
+    syntheticEvents,
+    matterId,
+    testMatter,
+    [],
+    syntheticRequestingUser,
+    asOf,
+  );
+
+  assert.notEqual(derived.value, SMITH_STYLE_SENTENCE);
+  assert.ok(
+    !derived.value.includes("Respond to opposing counsel after the client makes a decision"),
+    "Silence is measured against asOf, not a later inserted event",
+  );
+});
+
+test("next-action: silence boundary is 180 days inclusive", () => {
+  const matterId = "test-matter-na-silence-boundary";
+  const testMatter = makeNextActionMatter(matterId);
+  const syntheticEvents = smithStyleApprovalEvents(matterId);
+  const approvalTime = new Date("2026-09-17T12:00:00Z").getTime();
+  const asOf179 = new Date(approvalTime + 179 * DAY_MS).toISOString();
+  const asOf180 = new Date(approvalTime + 180 * DAY_MS).toISOString();
+
+  const at179 = deriveNextActionSlot(
+    syntheticEvents,
+    matterId,
+    testMatter,
+    [],
+    syntheticRequestingUser,
+    asOf179,
+  );
+  const at180 = deriveNextActionSlot(
+    syntheticEvents,
+    matterId,
+    testMatter,
+    [],
+    syntheticRequestingUser,
+    asOf180,
+  );
+
+  assert.equal(
+    at179.value,
+    SMITH_STYLE_SENTENCE,
+    "179 days of silence must not stale the approval (so >= vs > is load-bearing)",
+  );
+  assert.notEqual(
+    at180.value,
+    SMITH_STYLE_SENTENCE,
+    "180 days of silence must stale the approval",
+  );
+});
+
+test("next-action: ground truth is unchanged at its asOf", () => {
+  const derived = deriveNextActionSlot(
+    extractedEvents,
+    syntheticMatters[0].id,
+    syntheticMatters[0],
+    evidenceProcessing.eligibleEvidence,
+    syntheticRequestingUser,
+    syntheticCurrentStateGroundTruth.asOf,
+  );
+  const expectation = syntheticCurrentStateGroundTruth.expectations.find(
+    (exp) => exp.slotId === "next-action",
+  );
+
+  assert.ok(expectation);
+  assert.equal(derived.value, expectation.expectedValue);
+  assert.equal(derived.state, expectation.expectedState);
 });

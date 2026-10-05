@@ -7,6 +7,7 @@ import {
   syntheticOperationalEventGroundTruth,
   syntheticRequestingUser,
 } from "@/data/synthetic-matter";
+import { syntheticCurrentStateGroundTruth } from "@/data/synthetic-current-state";
 import { buildEligibleEvidenceSet } from "@/lib/evidence-processing";
 import { extractOperationalEvents } from "@/lib/operational-events";
 import { deriveCurrentStatusSlot, deriveLastImportantEventSlot, deriveWaitingOnSlot, deriveNextActionSlot } from "@/lib/current-state-reasoning";
@@ -52,6 +53,7 @@ const derivedNextActionSlot = deriveNextActionSlot(
   syntheticMatterBrief.matter,
   evidenceProcessing.eligibleEvidence,
   syntheticRequestingUser,
+  syntheticCurrentStateGroundTruth.asOf,
 );
 
 // Build the brief with derived slots and predefined other slots

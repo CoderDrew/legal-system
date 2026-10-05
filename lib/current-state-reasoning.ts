@@ -372,7 +372,8 @@ function isApprovalStaleForNextAction(
   approval: OperationalEvent,
   allMatterEvents: OperationalEvent[],
   matter: SyntheticMatter,
-  eligibleEvidence: EligibleEvidenceItem[]
+  eligibleEvidence: EligibleEvidenceItem[],
+  asOf: string
 ): boolean {
   const approvalTime = getEventTimestamp(approval);
 
@@ -392,8 +393,8 @@ function isApprovalStaleForNextAction(
     }
   }
 
-  const latestTime = getEventTimestamp(getLatestEvent(allMatterEvents));
-  return latestTime - approvalTime >= SIX_MONTHS_MS;
+  const asOfTime = new Date(asOf).getTime();
+  return asOfTime - approvalTime >= SIX_MONTHS_MS;
 }
 
 /**
@@ -1033,6 +1034,7 @@ export function deriveNextActionSlot(
   matter: SyntheticMatter,
   eligibleEvidence: EligibleEvidenceItem[],
   requestingUser: SyntheticUser,
+  asOf: string,
 ): StatusClaim {
   const allMatterEvents = events.filter((event) => event.matterId === matterId);
   const substantiveEvents = allMatterEvents.filter(
@@ -1052,7 +1054,8 @@ export function deriveNextActionSlot(
         waitingEvent,
         allMatterEvents,
         matter,
-        eligibleEvidence
+        eligibleEvidence,
+        asOf
       )
   );
 
