@@ -877,23 +877,8 @@ export function deriveNextActionSlot(
       });
 
       // Infer: respond to the sender after getting approval/decision
-      const actorNormalized = latestDoc.actor
-        ? latestDoc.actor.toLowerCase()
-        : "";
-
-      let recipient: string;
-      if (
-        actorNormalized.includes("opposing") ||
-        actorNormalized.includes("counsel")
-      ) {
-        recipient = "opposing counsel";
-      } else if (actorNormalized.includes("court")) {
-        recipient = "the court";
-      } else if (latestDoc.actor) {
-        recipient = latestDoc.actor;
-      } else {
-        recipient = "the sender";
-      }
+      // Use the actor name directly from structured data, lowercase for consistency
+      const recipient = latestDoc.actor ? latestDoc.actor.toLowerCase() : "the sender";
 
       // Check if we're waiting for client or other approval based on action text
       const approvalAction = latestWaiting.action.toLowerCase();

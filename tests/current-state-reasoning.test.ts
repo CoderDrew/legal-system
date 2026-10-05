@@ -2482,8 +2482,8 @@ test("next-action: open approval request with document context returns INFERRED"
     "Value should mention responding",
   );
   assert.ok(
-    derived.value.toLowerCase().includes("opposing counsel"),
-    "Value should identify opposing counsel as recipient",
+    derived.value.includes("opposing counsel"),
+    "Value should identify opposing counsel as recipient (lowercased actor name)",
   );
   assert.equal(
     derived.evidenceIds[0],
@@ -2776,9 +2776,8 @@ test("next-action: approval with court as sender", () => {
 
   assert.equal(derived.state, "INFERRED", "State should be INFERRED");
   assert.ok(
-    derived.value.toLowerCase().includes("court") ||
-      derived.value.toLowerCase().includes("clerk"),
-    "Value should identify court as recipient",
+    derived.value.includes("court clerk"),
+    "Value should identify court clerk as recipient (lowercased actor name)",
   );
 });
 
@@ -2892,8 +2891,8 @@ test("next-action: client name mentioned in approval action", () => {
     "Value should mention client when client name is in action",
   );
   assert.ok(
-    derived.value.toLowerCase().includes("opposing counsel"),
-    "Value should identify opposing counsel as recipient",
+    derived.value.includes("opposing counsel"),
+    "Value should identify opposing counsel as recipient (lowercased actor name)",
   );
 });
 
@@ -2952,10 +2951,10 @@ test("next-action: actor 'Courtney Smith' is not treated as court", () => {
   );
 
   assert.equal(derived.state, "INFERRED", "State should be INFERRED");
-  // Should reference "Courtney Smith" as sender, not "the court"
+  // Should reference "courtney smith" as sender (lowercased), not substring match to "court"
   assert.ok(
-    derived.value.includes("Courtney Smith"),
-    "Value should identify Courtney Smith as sender, not court",
+    derived.value.includes("courtney smith"),
+    "Value should identify courtney smith as sender (lowercased actor name)",
   );
   assert.ok(
     !derived.value.match(/\bthe court\b/i),
