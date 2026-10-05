@@ -48,7 +48,7 @@ export function StatusBrief({
             </div>
             <div className="flex items-center gap-2 text-xs text-slate-300">
               <CheckIcon className="h-4 w-4 text-teal-300" />
-              3 slots derived · 4 slots predefined
+              4 slots derived · 3 slots predefined
             </div>
           </div>
         </div>
@@ -225,8 +225,9 @@ export function StatusBrief({
               Extracted events
             </h4>
             <p className="mt-1 text-xs leading-5 text-slate-500">
-              Historical records of operational events. The current-status, last-important-event, and waiting-on slots are
-              derived from the matter&apos;s events. The other 4 slots remain predefined.
+              Historical records of operational events. The current-status, last-important-event,
+              waiting-on, and next-action slots are derived from the matter&apos;s events.
+              The other 3 slots remain predefined.
             </p>
             <ol className="mt-3 space-y-2">
               {operationalEvents.map((event) => (

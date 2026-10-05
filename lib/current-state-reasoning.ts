@@ -636,3 +636,331 @@ export function deriveCurrentStatusSlot(
     evidenceIds: [latestEvent.provenance.sourceArtifactId],
   };
 }
+
+/**
+ * Derives the next-action slot from operational events.
+ *
+ * This is an inference-type slot: it reasons about what action should logically follow
+ * from the current state of operational events.
+ *
+ * Reasoning rules:
+ * - If there's an open APPROVAL_REQUESTED, infer that the next action is to respond
+ *   to the sender of the associated document after approval is obtained.
+ * - If there's an open WAITING_STATE_REPORTED, infer the next action from the object.
+ * - Otherwise check the most recent substantive event and infer from context.
+ *
+ * Evidence state: Always INFERRED (reasoning about future action, not directly evidenced)
+ * or UNKNOWN when insufficient information exists.
+ *
+ * Deterministic: Uses event timestamps, eventType, and structured fields.
+ * No AI, models, or fixture-specific strings.
+ */
+export function deriveNextActionSlot(
+  events: OperationalEvent[],
+  matterId: string,
+  matter: SyntheticMatter,
+): StatusClaim {
+  const matterEvents = events.filter(
+    (e) =>
+      e.matterId === matterId &&
+      e.eventType !== "MATTER_STATUS_RECORDED" &&
+      e.eventType !== "RESPONSIBILITY_RECORDED"
+  );
+
+  if (matterEvents.length === 0) {
+    return {
+      id: "next-action",
+      label: "Next Action",
+      value: "Unknown",
+      state: "UNKNOWN",
+      evidenceIds: [],
+    };
+  }
+
+  // Find all waiting-type events
+  const waitingEvents = matterEvents.filter(
+    (e) =>
+      e.eventType === "APPROVAL_REQUESTED" ||
+      e.eventType === "WAITING_STATE_REPORTED"
+  );
+
+  if (waitingEvents.length === 0) {
+    // No waiting events - check latest substantive event
+    const latestEvent = matterEvents.reduce((latest, current) => {
+      const latestTime = new Date(
+        latest.occurredAt ?? latest.provenance.sourceRecordedAt
+      ).getTime();
+      const currentTime = new Date(
+        current.occurredAt ?? current.provenance.sourceRecordedAt
+      ).getTime();
+
+      if (currentTime > latestTime) return current;
+      if (currentTime < latestTime) return latest;
+
+      if (current.occurredAt !== null && latest.occurredAt === null)
+        return current;
+      if (current.occurredAt === null && latest.occurredAt !== null)
+        return latest;
+
+      return current.eventId > latest.eventId ? current : latest;
+    });
+
+    // Infer next action from the latest event type
+    if (latestEvent.eventType === "DOCUMENT_SENT") {
+      return {
+        id: "next-action",
+        label: "Next Action",
+        value: "Review the document and respond.",
+        state: "INFERRED",
+        evidenceIds: [latestEvent.provenance.sourceArtifactId],
+      };
+    } else if (latestEvent.eventType === "DOCUMENT_REVIEWED") {
+      return {
+        id: "next-action",
+        label: "Next Action",
+        value: "Respond with decision or next steps.",
+        state: "INFERRED",
+        evidenceIds: [latestEvent.provenance.sourceArtifactId],
+      };
+    }
+
+    return {
+      id: "next-action",
+      label: "Next Action",
+      value: "Unknown",
+      state: "UNKNOWN",
+      evidenceIds: [],
+    };
+  }
+
+  // Check which waiting events are still open (not superseded)
+  const openWaitingEvents: OperationalEvent[] = [];
+
+  for (const waitingEvent of waitingEvents) {
+    const waitingTime = new Date(
+      waitingEvent.occurredAt ?? waitingEvent.provenance.sourceRecordedAt
+    ).getTime();
+
+    let isSuperseded = false;
+
+    // WAITING_STATE_REPORTED is superseded by later substantive events
+    if (waitingEvent.eventType === "WAITING_STATE_REPORTED") {
+      for (const event of matterEvents) {
+        if (
+          event.eventType === "DOCUMENT_SENT" ||
+          event.eventType === "APPROVAL_REQUESTED" ||
+          event.eventType === "DOCUMENT_REVIEWED"
+        ) {
+          const eventTime = new Date(
+            event.occurredAt ?? event.provenance.sourceRecordedAt
+          ).getTime();
+          const supersedes =
+            eventTime > waitingTime ||
+            (eventTime === waitingTime && event.eventId > waitingEvent.eventId);
+
+          if (supersedes) {
+            isSuperseded = true;
+            break;
+          }
+        }
+      }
+    }
+
+    // APPROVAL_REQUESTED stays open (no resolution logic in V1)
+
+    if (!isSuperseded) {
+      openWaitingEvents.push(waitingEvent);
+    }
+  }
+
+  if (openWaitingEvents.length === 0) {
+    // No open waiting events - check latest substantive event
+    const latestEvent = matterEvents.reduce((latest, current) => {
+      const latestTime = new Date(
+        latest.occurredAt ?? latest.provenance.sourceRecordedAt
+      ).getTime();
+      const currentTime = new Date(
+        current.occurredAt ?? current.provenance.sourceRecordedAt
+      ).getTime();
+
+      if (currentTime > latestTime) return current;
+      if (currentTime < latestTime) return latest;
+
+      if (current.occurredAt !== null && latest.occurredAt === null)
+        return current;
+      if (current.occurredAt === null && latest.occurredAt !== null)
+        return latest;
+
+      return current.eventId > latest.eventId ? current : latest;
+    });
+
+    // Infer next action from the latest event type
+    if (latestEvent.eventType === "DOCUMENT_SENT") {
+      return {
+        id: "next-action",
+        label: "Next Action",
+        value: "Review the document and respond.",
+        state: "INFERRED",
+        evidenceIds: [latestEvent.provenance.sourceArtifactId],
+      };
+    } else if (latestEvent.eventType === "DOCUMENT_REVIEWED") {
+      return {
+        id: "next-action",
+        label: "Next Action",
+        value: "Respond with decision or next steps.",
+        state: "INFERRED",
+        evidenceIds: [latestEvent.provenance.sourceArtifactId],
+      };
+    }
+
+    return {
+      id: "next-action",
+      label: "Next Action",
+      value: "Unknown",
+      state: "UNKNOWN",
+      evidenceIds: [],
+    };
+  }
+
+  // Get the most recent open waiting event
+  const latestWaiting = openWaitingEvents.reduce((latest, current) => {
+    const latestTime = new Date(
+      latest.occurredAt ?? latest.provenance.sourceRecordedAt
+    ).getTime();
+    const currentTime = new Date(
+      current.occurredAt ?? current.provenance.sourceRecordedAt
+    ).getTime();
+
+    if (currentTime > latestTime) return current;
+    if (currentTime < latestTime) return latest;
+
+    if (current.occurredAt !== null && latest.occurredAt === null)
+      return current;
+    if (current.occurredAt === null && latest.occurredAt !== null)
+      return latest;
+
+    return current.eventId > latest.eventId ? current : latest;
+  });
+
+  // Infer the next action based on the open waiting event
+  if (latestWaiting.eventType === "APPROVAL_REQUESTED") {
+    // Find who sent the document that triggered this approval request
+    const latestWaitingTime = new Date(
+      latestWaiting.occurredAt ?? latestWaiting.provenance.sourceRecordedAt
+    ).getTime();
+
+    // Find document sent events before or concurrent with the approval request
+    const docEvents = matterEvents.filter(
+      (e) => e.eventType === "DOCUMENT_SENT"
+    );
+    const relevantDocs = docEvents.filter((doc) => {
+      const docTime = new Date(
+        doc.occurredAt ?? doc.provenance.sourceRecordedAt
+      ).getTime();
+      return docTime <= latestWaitingTime;
+    });
+
+    if (relevantDocs.length > 0) {
+      // Get the most recent document before the approval
+      const latestDoc = relevantDocs.reduce((latest, current) => {
+        const latestTime = new Date(
+          latest.occurredAt ?? latest.provenance.sourceRecordedAt
+        ).getTime();
+        const currentTime = new Date(
+          current.occurredAt ?? current.provenance.sourceRecordedAt
+        ).getTime();
+
+        if (currentTime > latestTime) return current;
+        if (currentTime < latestTime) return latest;
+
+        return current.eventId > latest.eventId ? current : latest;
+      });
+
+      // Infer: respond to the sender after getting approval/decision
+      const actorNormalized = latestDoc.actor
+        ? latestDoc.actor.toLowerCase()
+        : "";
+
+      let recipient: string;
+      if (
+        actorNormalized.includes("opposing") ||
+        actorNormalized.includes("counsel")
+      ) {
+        recipient = "opposing counsel";
+      } else if (actorNormalized.includes("court")) {
+        recipient = "the court";
+      } else if (latestDoc.actor) {
+        recipient = latestDoc.actor;
+      } else {
+        recipient = "the sender";
+      }
+
+      // Check if we're waiting for client or other approval based on action text
+      const approvalAction = latestWaiting.action.toLowerCase();
+      let decisionMaker = "a decision";
+
+      if (
+        approvalAction.includes("client") ||
+        approvalAction.includes(matter.client.toLowerCase())
+      ) {
+        decisionMaker = "the client makes a decision";
+      } else if (approvalAction.includes("attorney")) {
+        decisionMaker = "attorney approval";
+      } else if (approvalAction.includes("approval")) {
+        decisionMaker = "approval";
+      } else if (approvalAction.includes("review")) {
+        decisionMaker = "review";
+      }
+
+      return {
+        id: "next-action",
+        label: "Next Action",
+        value: `Respond to ${recipient} after ${decisionMaker}.`,
+        state: "INFERRED",
+        evidenceIds: [latestWaiting.provenance.sourceArtifactId],
+      };
+    }
+
+    // Approval requested but no prior document context
+    // Make the next action specific to the approval object if available
+    const approvalObject = latestWaiting.object
+      ? latestWaiting.object.toLowerCase()
+      : null;
+
+    if (approvalObject) {
+      return {
+        id: "next-action",
+        label: "Next Action",
+        value: `Proceed with ${approvalObject} after obtaining approval.`,
+        state: "INFERRED",
+        evidenceIds: [latestWaiting.provenance.sourceArtifactId],
+      };
+    }
+
+    return {
+      id: "next-action",
+      label: "Next Action",
+      value: "Proceed after obtaining approval.",
+      state: "INFERRED",
+      evidenceIds: [latestWaiting.provenance.sourceArtifactId],
+    };
+  } else if (latestWaiting.eventType === "WAITING_STATE_REPORTED") {
+    // Waiting for something - next action is to act once received
+    const waitingFor = latestWaiting.object || "response";
+    return {
+      id: "next-action",
+      label: "Next Action",
+      value: `Review and respond after receiving ${waitingFor.toLowerCase()}.`,
+      state: "INFERRED",
+      evidenceIds: [latestWaiting.provenance.sourceArtifactId],
+    };
+  }
+
+  return {
+    id: "next-action",
+    label: "Next Action",
+    value: "Unknown",
+    state: "UNKNOWN",
+    evidenceIds: [],
+  };
+}

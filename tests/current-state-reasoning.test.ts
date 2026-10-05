@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { OperationalEvent, EligibleEvidenceItem } from "@/types/mattermind";
+import type { OperationalEvent, EligibleEvidenceItem, SyntheticMatter } from "@/types/mattermind";
 import {
   syntheticEvidenceUniverse,
   syntheticMatters,
@@ -10,7 +10,7 @@ import {
 import { syntheticCurrentStateGroundTruth } from "@/data/synthetic-current-state";
 import { buildEligibleEvidenceSet } from "@/lib/evidence-processing";
 import { extractOperationalEvents } from "@/lib/operational-events";
-import { deriveCurrentStatusSlot, deriveLastImportantEventSlot, deriveWaitingOnSlot } from "@/lib/current-state-reasoning";
+import { deriveCurrentStatusSlot, deriveLastImportantEventSlot, deriveWaitingOnSlot, deriveNextActionSlot } from "@/lib/current-state-reasoning";
 
 const evidenceProcessing = buildEligibleEvidenceSet({
   user: syntheticRequestingUser,
@@ -2367,4 +2367,598 @@ test("waiting-on MF2: text fallback with artifact is INFERRED", () => {
   // Sent to paralegal, not client - text fallback detects "Smith's" but must be INFERRED
   assert.equal(derived.state, "INFERRED");
   assert.equal(derived.value, "Client approval");
+});
+
+// ============================================================================
+// NEXT-ACTION SLOT TESTS
+// ============================================================================
+
+test("derived next-action slot matches ground-truth expectation", () => {
+  const derived = deriveNextActionSlot(
+    extractedEvents,
+    syntheticMatters[0].id,
+    syntheticMatters[0],
+  );
+  const expectation = syntheticCurrentStateGroundTruth.expectations.find(
+    (exp) => exp.slotId === "next-action",
+  );
+
+  assert.ok(expectation, "Ground truth has next-action expectation");
+
+  assert.equal(
+    derived.id,
+    "next-action",
+    "Derived slot has correct ID",
+  );
+  assert.equal(
+    derived.state,
+    expectation.expectedState,
+    "Derived state matches ground truth",
+  );
+  assert.equal(
+    derived.value,
+    expectation.expectedValue,
+    "Derived value matches ground truth",
+  );
+
+  // Map event IDs to artifact IDs for comparison
+  const eventToArtifactMap = new Map(
+    extractedEvents.map((event) => [
+      event.eventId,
+      event.provenance.sourceArtifactId,
+    ]),
+  );
+
+  const expectedArtifactIds = expectation.supportingEventIds
+    .map((eventId) => eventToArtifactMap.get(eventId))
+    .filter((id): id is string => id !== undefined)
+    .sort();
+  const derivedArtifactIds = [...derived.evidenceIds].sort();
+
+  assert.deepEqual(
+    derivedArtifactIds,
+    expectedArtifactIds,
+    "Derived evidence artifacts match ground truth supporting events",
+  );
+});
+
+test("next-action: open approval request with document context returns INFERRED", () => {
+  const testMatter: SyntheticMatter = {
+    id: "test-matter-na-001",
+    matterNumber: "2026-NA001",
+    name: "Test Matter NA001",
+    client: "Test Client",
+    responsibleAttorney: "Test Attorney",
+    status: "Active",
+    participantIds: [],
+  };
+
+  const syntheticEvents: OperationalEvent[] = [
+    {
+      eventId: "test-doc-sent",
+      matterId: "test-matter-na-001",
+      eventType: "DOCUMENT_SENT",
+      occurredAt: "2026-09-16T10:00:00Z",
+      actor: "Opposing counsel",
+      action: "Sent revised settlement language.",
+      object: "Revised settlement language",
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: "test-artifact-doc",
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-16T10:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "revised settlement language",
+      },
+    },
+    {
+      eventId: "test-approval-requested",
+      matterId: "test-matter-na-001",
+      eventType: "APPROVAL_REQUESTED",
+      occurredAt: "2026-09-17T12:00:00Z",
+      actor: "Attorney",
+      action: "Requested client approval before responding.",
+      object: "Settlement language",
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: "test-artifact-approval",
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-17T12:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "approval before responding",
+      },
+    },
+  ];
+
+  const derived = deriveNextActionSlot(
+    syntheticEvents,
+    "test-matter-na-001",
+    testMatter,
+  );
+
+  assert.equal(derived.state, "INFERRED", "State should be INFERRED");
+  assert.ok(
+    derived.value.toLowerCase().includes("respond"),
+    "Value should mention responding",
+  );
+  assert.ok(
+    derived.value.toLowerCase().includes("opposing counsel"),
+    "Value should identify opposing counsel as recipient",
+  );
+  assert.equal(
+    derived.evidenceIds[0],
+    "test-artifact-approval",
+    "Should cite the approval request artifact",
+  );
+});
+
+test("next-action: open waiting-state returns INFERRED", () => {
+  const testMatter: SyntheticMatter = {
+    id: "test-matter-na-002",
+    matterNumber: "2026-NA002",
+    name: "Test Matter NA002",
+    client: "Test Client",
+    responsibleAttorney: "Test Attorney",
+    status: "Active",
+    participantIds: [],
+  };
+
+  const syntheticEvents: OperationalEvent[] = [
+    {
+      eventId: "test-waiting",
+      matterId: "test-matter-na-002",
+      eventType: "WAITING_STATE_REPORTED",
+      occurredAt: "2026-09-15T10:00:00Z",
+      actor: "Attorney",
+      action: "Reported waiting for court decision.",
+      object: "Court decision",
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: "test-artifact-waiting",
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-15T10:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "waiting for court decision",
+      },
+    },
+  ];
+
+  const derived = deriveNextActionSlot(
+    syntheticEvents,
+    "test-matter-na-002",
+    testMatter,
+  );
+
+  assert.equal(derived.state, "INFERRED", "State should be INFERRED");
+  assert.ok(
+    derived.value.toLowerCase().includes("court decision"),
+    "Value should mention what we're waiting for",
+  );
+  assert.equal(
+    derived.evidenceIds[0],
+    "test-artifact-waiting",
+    "Should cite the waiting-state artifact",
+  );
+});
+
+test("next-action: superseded waiting-state is ignored", () => {
+  const testMatter: SyntheticMatter = {
+    id: "test-matter-na-003",
+    matterNumber: "2026-NA003",
+    name: "Test Matter NA003",
+    client: "Test Client",
+    responsibleAttorney: "Test Attorney",
+    status: "Active",
+    participantIds: [],
+  };
+
+  const syntheticEvents: OperationalEvent[] = [
+    {
+      eventId: "test-waiting",
+      matterId: "test-matter-na-003",
+      eventType: "WAITING_STATE_REPORTED",
+      occurredAt: "2026-09-10T10:00:00Z",
+      actor: "Attorney",
+      action: "Reported waiting for document.",
+      object: "Document",
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: "test-artifact-waiting",
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-10T10:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "waiting for document",
+      },
+    },
+    {
+      eventId: "test-doc-sent",
+      matterId: "test-matter-na-003",
+      eventType: "DOCUMENT_SENT",
+      occurredAt: "2026-09-15T10:00:00Z",
+      actor: "Opposing counsel",
+      action: "Sent the document.",
+      object: "Document",
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: "test-artifact-doc",
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-15T10:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "sent the document",
+      },
+    },
+  ];
+
+  const derived = deriveNextActionSlot(
+    syntheticEvents,
+    "test-matter-na-003",
+    testMatter,
+  );
+
+  // The waiting state is superseded by document sent, so we infer from the document
+  assert.equal(derived.state, "INFERRED", "State should be INFERRED");
+  assert.ok(
+    derived.value.toLowerCase().includes("review"),
+    "Value should mention reviewing",
+  );
+  assert.equal(
+    derived.evidenceIds[0],
+    "test-artifact-doc",
+    "Should cite the document artifact, not the superseded waiting",
+  );
+});
+
+test("next-action: matter isolation works correctly", () => {
+  const testMatter1: SyntheticMatter = {
+    id: "test-matter-na-004",
+    matterNumber: "2026-NA004",
+    name: "Test Matter NA004",
+    client: "Test Client",
+    responsibleAttorney: "Test Attorney",
+    status: "Active",
+    participantIds: [],
+  };
+
+  const testMatter2: SyntheticMatter = {
+    id: "test-matter-na-005",
+    matterNumber: "2026-NA005",
+    name: "Test Matter NA005",
+    client: "Another Client",
+    responsibleAttorney: "Test Attorney",
+    status: "Active",
+    participantIds: [],
+  };
+
+  const syntheticEvents: OperationalEvent[] = [
+    {
+      eventId: "test-approval-matter-1",
+      matterId: "test-matter-na-004",
+      eventType: "APPROVAL_REQUESTED",
+      occurredAt: "2026-09-17T12:00:00Z",
+      actor: "Attorney",
+      action: "Requested client approval for matter 1.",
+      object: "Settlement",
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: "test-artifact-matter-1",
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-17T12:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "approval for matter 1",
+      },
+    },
+    {
+      eventId: "test-approval-matter-2",
+      matterId: "test-matter-na-005",
+      eventType: "APPROVAL_REQUESTED",
+      occurredAt: "2026-09-18T10:00:00Z",
+      actor: "Attorney",
+      action: "Requested client approval for matter 2.",
+      object: "Contract",
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: "test-artifact-matter-2",
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-18T10:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "approval for matter 2",
+      },
+    },
+  ];
+
+  const derivedMatter1 = deriveNextActionSlot(
+    syntheticEvents,
+    "test-matter-na-004",
+    testMatter1,
+  );
+
+  const derivedMatter2 = deriveNextActionSlot(
+    syntheticEvents,
+    "test-matter-na-005",
+    testMatter2,
+  );
+
+  // Each matter should only see its own events
+  assert.equal(
+    derivedMatter1.evidenceIds[0],
+    "test-artifact-matter-1",
+    "Matter 1 should cite only its own artifact",
+  );
+  assert.equal(
+    derivedMatter2.evidenceIds[0],
+    "test-artifact-matter-2",
+    "Matter 2 should cite only its own artifact",
+  );
+  assert.notEqual(
+    derivedMatter1.value,
+    derivedMatter2.value,
+    "Different matters should have different next actions",
+  );
+});
+
+test("next-action: no events returns UNKNOWN", () => {
+  const testMatter: SyntheticMatter = {
+    id: "test-matter-na-006",
+    matterNumber: "2026-NA006",
+    name: "Test Matter NA006",
+    client: "Test Client",
+    responsibleAttorney: "Test Attorney",
+    status: "Active",
+    participantIds: [],
+  };
+
+  const syntheticEvents: OperationalEvent[] = [];
+
+  const derived = deriveNextActionSlot(
+    syntheticEvents,
+    "test-matter-na-006",
+    testMatter,
+  );
+
+  assert.equal(derived.state, "UNKNOWN", "State should be UNKNOWN");
+  assert.equal(derived.value, "Unknown", "Value should be Unknown");
+  assert.equal(derived.evidenceIds.length, 0, "Should have no evidence IDs");
+});
+
+test("next-action: approval with court as sender", () => {
+  const testMatter: SyntheticMatter = {
+    id: "test-matter-na-007",
+    matterNumber: "2026-NA007",
+    name: "Test Matter NA007",
+    client: "Test Client",
+    responsibleAttorney: "Test Attorney",
+    status: "Active",
+    participantIds: [],
+  };
+
+  const syntheticEvents: OperationalEvent[] = [
+    {
+      eventId: "test-doc-from-court",
+      matterId: "test-matter-na-007",
+      eventType: "DOCUMENT_SENT",
+      occurredAt: "2026-09-16T10:00:00Z",
+      actor: "Court clerk",
+      action: "Sent proposed order.",
+      object: "Proposed order",
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: "test-artifact-court",
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-16T10:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "proposed order",
+      },
+    },
+    {
+      eventId: "test-approval-court",
+      matterId: "test-matter-na-007",
+      eventType: "APPROVAL_REQUESTED",
+      occurredAt: "2026-09-17T12:00:00Z",
+      actor: "Attorney",
+      action: "Requested client approval before filing.",
+      object: "Order",
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: "test-artifact-approval-court",
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-17T12:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "approval before filing",
+      },
+    },
+  ];
+
+  const derived = deriveNextActionSlot(
+    syntheticEvents,
+    "test-matter-na-007",
+    testMatter,
+  );
+
+  assert.equal(derived.state, "INFERRED", "State should be INFERRED");
+  assert.ok(
+    derived.value.toLowerCase().includes("court") ||
+      derived.value.toLowerCase().includes("clerk"),
+    "Value should identify court as recipient",
+  );
+});
+
+test("next-action: only document-reviewed event (no approval)", () => {
+  const testMatter: SyntheticMatter = {
+    id: "test-matter-na-008",
+    matterNumber: "2026-NA008",
+    name: "Test Matter NA008",
+    client: "Test Client",
+    responsibleAttorney: "Test Attorney",
+    status: "Active",
+    participantIds: [],
+  };
+
+  const syntheticEvents: OperationalEvent[] = [
+    {
+      eventId: "test-doc-reviewed",
+      matterId: "test-matter-na-008",
+      eventType: "DOCUMENT_REVIEWED",
+      occurredAt: "2026-09-17T10:00:00Z",
+      actor: "Attorney",
+      action: "Reviewed the contract.",
+      object: "Contract",
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: "test-artifact-reviewed",
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-17T10:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "reviewed the contract",
+      },
+    },
+  ];
+
+  const derived = deriveNextActionSlot(
+    syntheticEvents,
+    "test-matter-na-008",
+    testMatter,
+  );
+
+  assert.equal(derived.state, "INFERRED", "State should be INFERRED");
+  assert.ok(
+    derived.value.toLowerCase().includes("respond") ||
+      derived.value.toLowerCase().includes("decision"),
+    "Value should mention responding or decision",
+  );
+  assert.equal(
+    derived.evidenceIds[0],
+    "test-artifact-reviewed",
+    "Should cite the document-reviewed artifact",
+  );
+});
+
+test("next-action: client name mentioned in approval action", () => {
+  const testMatter: SyntheticMatter = {
+    id: "test-matter-na-009",
+    matterNumber: "2026-NA009",
+    name: "Test Matter NA009",
+    client: "Jordan Smith",
+    responsibleAttorney: "Test Attorney",
+    status: "Active",
+    participantIds: [],
+  };
+
+  const syntheticEvents: OperationalEvent[] = [
+    {
+      eventId: "test-doc-sent-na009",
+      matterId: "test-matter-na-009",
+      eventType: "DOCUMENT_SENT",
+      occurredAt: "2026-09-16T10:00:00Z",
+      actor: "Opposing counsel",
+      action: "Sent revised proposal.",
+      object: "Proposal",
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: "test-artifact-doc-na009",
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-16T10:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "revised proposal",
+      },
+    },
+    {
+      eventId: "test-approval-na009",
+      matterId: "test-matter-na-009",
+      eventType: "APPROVAL_REQUESTED",
+      occurredAt: "2026-09-17T12:00:00Z",
+      actor: "Attorney",
+      action: "Requested Jordan Smith's approval before responding.",
+      object: "Proposal",
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: "test-artifact-approval-na009",
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-17T12:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "Jordan Smith's approval",
+      },
+    },
+  ];
+
+  const derived = deriveNextActionSlot(
+    syntheticEvents,
+    "test-matter-na-009",
+    testMatter,
+  );
+
+  assert.equal(derived.state, "INFERRED", "State should be INFERRED");
+  assert.ok(
+    derived.value.toLowerCase().includes("client"),
+    "Value should mention client when client name is in action",
+  );
+  assert.ok(
+    derived.value.toLowerCase().includes("opposing counsel"),
+    "Value should identify opposing counsel as recipient",
+  );
+});
+
+test("next-action: actor 'Courtney Smith' is not treated as court", () => {
+  const testMatter: SyntheticMatter = {
+    id: "test-matter-na-010",
+    matterNumber: "2026-NA010",
+    name: "Test Matter NA010",
+    client: "Test Client",
+    responsibleAttorney: "Test Attorney",
+    status: "Active",
+    participantIds: [],
+  };
+
+  const syntheticEvents: OperationalEvent[] = [
+    {
+      eventId: "test-doc-courtney",
+      matterId: "test-matter-na-010",
+      eventType: "DOCUMENT_SENT",
+      occurredAt: "2026-09-16T10:00:00Z",
+      actor: "Courtney Smith",
+      action: "Sent updated contract.",
+      object: "Contract",
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: "test-artifact-courtney",
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-16T10:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "updated contract",
+      },
+    },
+    {
+      eventId: "test-approval-courtney",
+      matterId: "test-matter-na-010",
+      eventType: "APPROVAL_REQUESTED",
+      occurredAt: "2026-09-17T12:00:00Z",
+      actor: "Attorney",
+      action: "Requested client approval before filing.",
+      object: "Contract",
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: "test-artifact-approval-courtney",
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-17T12:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "approval before filing",
+      },
+    },
+  ];
+
+  const derived = deriveNextActionSlot(
+    syntheticEvents,
+    "test-matter-na-010",
+    testMatter,
+  );
+
+  assert.equal(derived.state, "INFERRED", "State should be INFERRED");
+  // Should reference "Courtney Smith" as sender, not "the court"
+  assert.ok(
+    derived.value.includes("Courtney Smith"),
+    "Value should identify Courtney Smith as sender, not court",
+  );
+  assert.ok(
+    !derived.value.match(/\bthe court\b/i),
+    "Value should not mention 'the court'",
+  );
 });
