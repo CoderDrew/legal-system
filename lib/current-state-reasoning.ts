@@ -1037,6 +1037,16 @@ export function deriveNextActionSlot(
   asOf: string,
 ): StatusClaim {
   const allMatterEvents = events.filter((event) => event.matterId === matterId);
+  const statusEvents = allMatterEvents.filter(
+    (event) => event.eventType === "MATTER_STATUS_RECORDED"
+  );
+  if (
+    statusEvents.length > 0 &&
+    isClosedOrSettledStatusEvent(getLatestEvent(statusEvents))
+  ) {
+    return unknownNextAction();
+  }
+
   const substantiveEvents = allMatterEvents.filter(
     (event) =>
       event.eventType !== "MATTER_STATUS_RECORDED" &&

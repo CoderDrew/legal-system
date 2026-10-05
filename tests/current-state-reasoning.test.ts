@@ -3812,6 +3812,59 @@ test("next-action: silence boundary is 180 days inclusive", () => {
   );
 });
 
+test("next-action: later opposing-counsel document then Settled is UNKNOWN", () => {
+  const matterId = "test-matter-na-oc-doc-then-settled";
+  const testMatter = makeNextActionMatter(matterId);
+  const syntheticEvents: OperationalEvent[] = [
+    ...smithStyleApprovalEvents(matterId),
+    makeNextActionEvent({
+      eventId: `${matterId}-later-oc-doc`,
+      matterId,
+      eventType: "DOCUMENT_SENT",
+      occurredAt: "2026-09-20T10:00:00Z",
+      actor: "Opposing counsel",
+      action: "Sent a further revision.",
+      object: "Further revision",
+      provenance: {
+        sourceArtifactId: `${matterId}-artifact-later-oc`,
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-20T10:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "further revision",
+      },
+    }),
+    makeNextActionEvent({
+      eventId: `${matterId}-settled`,
+      matterId,
+      eventType: "MATTER_STATUS_RECORDED",
+      occurredAt: "2026-09-21T09:00:00Z",
+      actor: null,
+      action: "Recorded the matter status as Settled.",
+      object: "Matter status",
+      provenance: {
+        sourceArtifactId: `${matterId}-artifact-settled`,
+        sourceSystem: "Clio",
+        sourceRecordedAt: "2026-09-21T09:00:00Z",
+        associationMethod: "AUTHORITATIVE_SOURCE_RELATIONSHIP",
+        evidenceExcerpt: "Matter status: Settled",
+      },
+    }),
+  ];
+
+  const derived = deriveNextActionSlot(
+    syntheticEvents,
+    matterId,
+    testMatter,
+    [],
+    syntheticRequestingUser,
+    NEXT_ACTION_AS_OF,
+  );
+
+  assert.equal(derived.state, "UNKNOWN");
+  assert.equal(derived.value, "Unknown");
+  assert.notEqual(derived.value, "Review the document and respond.");
+});
+
 test("next-action: ground truth is unchanged at its asOf", () => {
   const derived = deriveNextActionSlot(
     extractedEvents,
