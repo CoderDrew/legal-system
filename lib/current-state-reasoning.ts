@@ -3,6 +3,7 @@ import type {
   OperationalEvent,
   StatusClaim,
   SyntheticMatter,
+  SyntheticUser,
 } from "@/types/mattermind";
 
 /**
@@ -151,6 +152,8 @@ const OWN_SIDE_ROLE_LABELS = new Set([
   "responsible attorney",
   "our firm",
   "counsel of record",
+  "firm paralegal",
+  "paralegal",
 ]);
 const COURT_ROLE_LABELS = new Set(["court", "court clerk"]);
 
@@ -168,13 +171,83 @@ function isClientActor(actor: string | null, matter: SyntheticMatter): boolean {
   return CLIENT_ROLE_LABELS.has(label) || actorEqualsName(actor, matter.client);
 }
 
-function isOwnSideActor(actor: string | null, matter: SyntheticMatter): boolean {
+function isOwnSideActor(
+  actor: string | null,
+  matter: SyntheticMatter,
+  requestingUser: SyntheticUser
+): boolean {
   if (!actor) return false;
   const label = normalizedActorLabel(actor);
   return (
     OWN_SIDE_ROLE_LABELS.has(label) ||
-    actorEqualsName(actor, matter.responsibleAttorney)
+    actorEqualsName(actor, matter.responsibleAttorney) ||
+    actorEqualsName(actor, requestingUser.name)
   );
+}
+
+function artifactAddresses(artifact: EligibleEvidenceItem): string[] {
+  return [
+    artifact.from,
+    ...(artifact.to ?? []),
+    ...(artifact.cc ?? []),
+  ].filter((address): address is string => Boolean(address));
+}
+
+/**
+ * Firm domains taken from emails of the responsible attorney or requesting user.
+ * Example: alex.thompson@lawfirm.example and rachel.morgan@lawfirm.example
+ * both yield lawfirm.example.
+ */
+function firmDomainsFromStructuredIdentity(
+  matter: SyntheticMatter,
+  requestingUser: SyntheticUser,
+  eligibleEvidence: EligibleEvidenceItem[]
+): Set<string> {
+  const ownSidePeople = [matter.responsibleAttorney, requestingUser.name];
+  const domains = new Set<string>();
+
+  for (const artifact of eligibleEvidence) {
+    for (const address of artifactAddresses(artifact)) {
+      if (
+        ownSidePeople.some((person) =>
+          emailLocalPartMatchesPerson(address, person)
+        )
+      ) {
+        const domain = address.toLowerCase().split("@")[1];
+        if (domain) {
+          domains.add(domain);
+        }
+      }
+    }
+  }
+
+  return domains;
+}
+
+function isEmailFromOwnSide(
+  artifact: EligibleEvidenceItem | undefined,
+  matter: SyntheticMatter,
+  requestingUser: SyntheticUser,
+  eligibleEvidence: EligibleEvidenceItem[]
+): boolean {
+  if (!artifact?.from) {
+    return false;
+  }
+  if (
+    isEmailFromPerson(artifact, matter.responsibleAttorney) ||
+    isEmailFromPerson(artifact, requestingUser.name)
+  ) {
+    return true;
+  }
+  const domain = artifact.from.toLowerCase().split("@")[1];
+  if (!domain) {
+    return false;
+  }
+  return firmDomainsFromStructuredIdentity(
+    matter,
+    requestingUser,
+    eligibleEvidence
+  ).has(domain);
 }
 
 /**
@@ -184,9 +257,13 @@ function isOwnSideActor(actor: string | null, matter: SyntheticMatter): boolean 
 function isDocumentFromClientOrOwnSide(
   event: OperationalEvent,
   matter: SyntheticMatter,
+  requestingUser: SyntheticUser,
   eligibleEvidence: EligibleEvidenceItem[]
 ): boolean {
-  if (isClientActor(event.actor, matter) || isOwnSideActor(event.actor, matter)) {
+  if (
+    isClientActor(event.actor, matter) ||
+    isOwnSideActor(event.actor, matter, requestingUser)
+  ) {
     return true;
   }
 
@@ -195,7 +272,7 @@ function isDocumentFromClientOrOwnSide(
   );
   return (
     isEmailFromPerson(artifact, matter.client) ||
-    isEmailFromPerson(artifact, matter.responsibleAttorney)
+    isEmailFromOwnSide(artifact, matter, requestingUser, eligibleEvidence)
   );
 }
 
@@ -221,14 +298,18 @@ function isDocumentFromClient(
  */
 function mapActorToRecipient(
   actor: string | null,
-  matter: SyntheticMatter
+  matter: SyntheticMatter,
+  requestingUser: SyntheticUser
 ): string | null {
   if (!actor) return "the sender";
 
   const label = normalizedActorLabel(actor);
   if (label === "opposing counsel") return "opposing counsel";
   if (COURT_ROLE_LABELS.has(label)) return "the court";
-  if (isClientActor(actor, matter) || isOwnSideActor(actor, matter)) {
+  if (
+    isClientActor(actor, matter) ||
+    isOwnSideActor(actor, matter, requestingUser)
+  ) {
     return null;
   }
 
@@ -953,6 +1034,7 @@ export function deriveNextActionSlot(
   matterId: string,
   matter: SyntheticMatter,
   eligibleEvidence: EligibleEvidenceItem[],
+  requestingUser: SyntheticUser,
 ): StatusClaim {
   const allMatterEvents = events.filter((event) => event.matterId === matterId);
   const substantiveEvents = allMatterEvents.filter(
@@ -993,11 +1075,22 @@ export function deriveNextActionSlot(
     if (relevantDocs.length > 0) {
       const latestDoc = getLatestEvent(relevantDocs);
 
-      if (isDocumentFromClientOrOwnSide(latestDoc, matter, eligibleEvidence)) {
+      if (
+        isDocumentFromClientOrOwnSide(
+          latestDoc,
+          matter,
+          requestingUser,
+          eligibleEvidence
+        )
+      ) {
         return nextActionAfterApprovalWithoutExternalSender(latestWaiting);
       }
 
-      const recipient = mapActorToRecipient(latestDoc.actor, matter);
+      const recipient = mapActorToRecipient(
+        latestDoc.actor,
+        matter,
+        requestingUser
+      );
       if (recipient === null) {
         return nextActionAfterApprovalWithoutExternalSender(latestWaiting);
       }

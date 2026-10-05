@@ -2379,6 +2379,7 @@ test("derived next-action slot matches ground-truth expectation", () => {
     syntheticMatters[0].id,
     syntheticMatters[0],
     evidenceProcessing.eligibleEvidence,
+    syntheticRequestingUser,
   );
   const expectation = syntheticCurrentStateGroundTruth.expectations.find(
     (exp) => exp.slotId === "next-action",
@@ -2476,6 +2477,7 @@ test("next-action: open approval request with document context returns INFERRED"
     "test-matter-na-001",
     testMatter,
     [],
+    syntheticRequestingUser,
   );
 
   assert.equal(derived.state, "INFERRED", "State should be INFERRED");
@@ -2530,6 +2532,7 @@ test("next-action: open waiting-state returns INFERRED", () => {
     "test-matter-na-002",
     testMatter,
     [],
+    syntheticRequestingUser,
   );
 
   assert.equal(derived.state, "INFERRED", "State should be INFERRED");
@@ -2597,6 +2600,7 @@ test("next-action: superseded waiting-state is ignored", () => {
     "test-matter-na-003",
     testMatter,
     [],
+    syntheticRequestingUser,
   );
 
   // The waiting state is superseded by document sent, so we infer from the document
@@ -2675,6 +2679,7 @@ test("next-action: matter isolation works correctly", () => {
     "test-matter-na-004",
     testMatter1,
     [],
+    syntheticRequestingUser,
   );
 
   const derivedMatter2 = deriveNextActionSlot(
@@ -2682,6 +2687,7 @@ test("next-action: matter isolation works correctly", () => {
     "test-matter-na-005",
     testMatter2,
     [],
+    syntheticRequestingUser,
   );
 
   // Each matter should only see its own events
@@ -2720,6 +2726,7 @@ test("next-action: no events returns UNKNOWN", () => {
     "test-matter-na-006",
     testMatter,
     [],
+    syntheticRequestingUser,
   );
 
   assert.equal(derived.state, "UNKNOWN", "State should be UNKNOWN");
@@ -2780,6 +2787,7 @@ test("next-action: approval with court as sender", () => {
     "test-matter-na-007",
     testMatter,
     [],
+    syntheticRequestingUser,
   );
 
   assert.equal(derived.state, "INFERRED", "State should be INFERRED");
@@ -2829,6 +2837,7 @@ test("next-action: only document-reviewed event (no approval)", () => {
     "test-matter-na-008",
     testMatter,
     [],
+    syntheticRequestingUser,
   );
 
   assert.equal(derived.state, "INFERRED", "State should be INFERRED");
@@ -2897,6 +2906,7 @@ test("next-action: client name mentioned in approval action", () => {
     "test-matter-na-009",
     testMatter,
     [],
+    syntheticRequestingUser,
   );
 
   assert.equal(derived.state, "INFERRED", "State should be INFERRED");
@@ -2963,6 +2973,7 @@ test("next-action: actor 'Courtney Smith' is not treated as court", () => {
     "test-matter-na-010",
     testMatter,
     [],
+    syntheticRequestingUser,
   );
 
   assert.equal(derived.state, "INFERRED", "State should be INFERRED");
@@ -3050,6 +3061,7 @@ test("next-action: organization name keeps its original casing", () => {
     "test-matter-na-011",
     testMatter,
     [],
+    syntheticRequestingUser,
   );
 
   assert.equal(derived.state, "INFERRED");
@@ -3105,6 +3117,7 @@ test("next-action: client-sent latest document does not say Respond to client", 
     "test-matter-na-012",
     testMatter,
     [],
+    syntheticRequestingUser,
   );
 
   assert.ok(
@@ -3159,6 +3172,7 @@ test("next-action: own-attorney-sent latest document does not say Respond to our
     "test-matter-na-013",
     testMatter,
     [],
+    syntheticRequestingUser,
   );
 
   assert.ok(
@@ -3231,7 +3245,7 @@ test("next-action: later Settled status does not drive the Smith-style sentence"
     }),
   ];
 
-  const derived = deriveNextActionSlot(syntheticEvents, matterId, testMatter, []);
+  const derived = deriveNextActionSlot(syntheticEvents, matterId, testMatter, [], syntheticRequestingUser);
   assert.notEqual(derived.value, SMITH_STYLE_SENTENCE);
   assert.ok(
     !derived.value.includes("Respond to opposing counsel after the client makes a decision"),
@@ -3262,7 +3276,7 @@ test("next-action: later Closed status does not drive the Smith-style sentence",
     }),
   ];
 
-  const derived = deriveNextActionSlot(syntheticEvents, matterId, testMatter, []);
+  const derived = deriveNextActionSlot(syntheticEvents, matterId, testMatter, [], syntheticRequestingUser);
   assert.notEqual(derived.value, SMITH_STYLE_SENTENCE);
   assert.ok(
     !derived.value.includes("Respond to opposing counsel after the client makes a decision"),
@@ -3293,7 +3307,7 @@ test("next-action: later client document does not drive the Smith-style sentence
     }),
   ];
 
-  const derived = deriveNextActionSlot(syntheticEvents, matterId, testMatter, []);
+  const derived = deriveNextActionSlot(syntheticEvents, matterId, testMatter, [], syntheticRequestingUser);
   assert.notEqual(derived.value, SMITH_STYLE_SENTENCE);
   assert.ok(
     !derived.value.includes("Respond to opposing counsel after the client makes a decision"),
@@ -3324,7 +3338,7 @@ test("next-action: about 6 months of silence does not drive the Smith-style sent
     }),
   ];
 
-  const derived = deriveNextActionSlot(syntheticEvents, matterId, testMatter, []);
+  const derived = deriveNextActionSlot(syntheticEvents, matterId, testMatter, [], syntheticRequestingUser);
   assert.notEqual(derived.value, SMITH_STYLE_SENTENCE);
   assert.ok(
     !derived.value.includes("Respond to opposing counsel after the client makes a decision"),
@@ -3406,6 +3420,7 @@ test("next-action and waiting-on agree on who is being waited on", () => {
     "test-matter-na-agree",
     testMatter,
     testEvidence,
+    syntheticRequestingUser,
   );
 
   assert.equal(waiting.value, "Client approval");
@@ -3416,5 +3431,209 @@ test("next-action and waiting-on agree on who is being waited on", () => {
   assert.ok(
     !next.value.includes("attorney approval"),
     "Next Action must not disagree by waiting on attorney approval",
+  );
+});
+
+function makeEmailEvidence(args: {
+  id: string;
+  from: string;
+  to: string[];
+  timestamp?: string;
+}): EligibleEvidenceItem {
+  return {
+    id: args.id,
+    sourceSystem: "Outlook",
+    artifactType: "Email",
+    timestamp: args.timestamp ?? "2026-09-17T12:00:00Z",
+    from: args.from,
+    to: args.to,
+    subject: "Test",
+    content: "Test",
+    participants: [],
+    authorizedUserIds: ["user-rachel-morgan"],
+    association: {
+      evidenceId: args.id,
+      status: "ASSOCIATED",
+      method: "EXPLICIT_MATTER_ID",
+      reason: "test",
+    },
+    provenance: {
+      source: "Outlook",
+      originalArtifactId: args.id,
+      associationMethod: "EXPLICIT_MATTER_ID",
+      retrieved: "synthetic request execution",
+    },
+  };
+}
+
+test("next-action: requesting-user sender is our side, not a respond-to target", () => {
+  const matterId = "test-matter-na-own-requesting-user";
+  const testMatter = makeNextActionMatter(matterId);
+  const syntheticEvents: OperationalEvent[] = [
+    makeNextActionEvent({
+      eventId: `${matterId}-doc`,
+      matterId,
+      eventType: "DOCUMENT_SENT",
+      occurredAt: "2026-09-16T10:00:00Z",
+      actor: "Rachel Morgan",
+      action: "Sent an internal draft.",
+      object: "Internal draft",
+      provenance: {
+        sourceArtifactId: `${matterId}-artifact-doc`,
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-16T10:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "internal draft",
+      },
+    }),
+    makeNextActionEvent({
+      eventId: `${matterId}-approval`,
+      matterId,
+      eventType: "APPROVAL_REQUESTED",
+      occurredAt: "2026-09-17T12:00:00Z",
+      actor: "Attorney",
+      action: "Requested client approval before sending.",
+      object: "Internal draft",
+      provenance: {
+        sourceArtifactId: `${matterId}-artifact-approval`,
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-17T12:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "approval before sending",
+      },
+    }),
+  ];
+
+  const derived = deriveNextActionSlot(
+    syntheticEvents,
+    matterId,
+    testMatter,
+    [],
+    syntheticRequestingUser,
+  );
+
+  assert.ok(
+    !/respond to rachel morgan/i.test(derived.value),
+    "Must not produce Respond to the requesting user",
+  );
+});
+
+test("next-action: Firm paralegal sender is our side, not a respond-to target", () => {
+  const matterId = "test-matter-na-own-paralegal";
+  const testMatter = makeNextActionMatter(matterId);
+  const syntheticEvents: OperationalEvent[] = [
+    makeNextActionEvent({
+      eventId: `${matterId}-doc`,
+      matterId,
+      eventType: "DOCUMENT_SENT",
+      occurredAt: "2026-09-16T10:00:00Z",
+      actor: "Firm paralegal",
+      action: "Sent the compiled exhibits.",
+      object: "Exhibits",
+      provenance: {
+        sourceArtifactId: `${matterId}-artifact-doc`,
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-16T10:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "compiled exhibits",
+      },
+    }),
+    makeNextActionEvent({
+      eventId: `${matterId}-approval`,
+      matterId,
+      eventType: "APPROVAL_REQUESTED",
+      occurredAt: "2026-09-17T12:00:00Z",
+      actor: "Attorney",
+      action: "Requested client approval before filing.",
+      object: "Exhibits",
+      provenance: {
+        sourceArtifactId: `${matterId}-artifact-approval`,
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-17T12:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "approval before filing",
+      },
+    }),
+  ];
+
+  const derived = deriveNextActionSlot(
+    syntheticEvents,
+    matterId,
+    testMatter,
+    [],
+    syntheticRequestingUser,
+  );
+
+  assert.ok(
+    !/respond to firm paralegal/i.test(derived.value),
+    "Must not produce Respond to a firm staff role",
+  );
+});
+
+test("next-action: firm-domain sender is our side even when the actor name is unknown", () => {
+  const matterId = "test-matter-na-own-firm-domain";
+  const testMatter = makeNextActionMatter(matterId);
+  const docArtifactId = `${matterId}-artifact-doc`;
+  const approvalArtifactId = `${matterId}-artifact-approval`;
+  const testEvidence: EligibleEvidenceItem[] = [
+    makeEmailEvidence({
+      id: docArtifactId,
+      from: "jamie.chen@lawfirm.example",
+      to: ["jordan.smith@example.com"],
+      timestamp: "2026-09-16T10:00:00Z",
+    }),
+    makeEmailEvidence({
+      id: approvalArtifactId,
+      from: "alex.thompson@lawfirm.example",
+      to: ["jordan.smith@example.com"],
+      timestamp: "2026-09-17T12:00:00Z",
+    }),
+  ];
+  const syntheticEvents: OperationalEvent[] = [
+    makeNextActionEvent({
+      eventId: `${matterId}-doc`,
+      matterId,
+      eventType: "DOCUMENT_SENT",
+      occurredAt: "2026-09-16T10:00:00Z",
+      actor: "Jamie Chen",
+      action: "Sent the draft letter.",
+      object: "Draft letter",
+      provenance: {
+        sourceArtifactId: docArtifactId,
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-16T10:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "draft letter",
+      },
+    }),
+    makeNextActionEvent({
+      eventId: `${matterId}-approval`,
+      matterId,
+      eventType: "APPROVAL_REQUESTED",
+      occurredAt: "2026-09-17T12:00:00Z",
+      actor: "Attorney",
+      action: "Requested client approval before sending.",
+      object: "Draft letter",
+      provenance: {
+        sourceArtifactId: approvalArtifactId,
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-17T12:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "approval before sending",
+      },
+    }),
+  ];
+
+  const derived = deriveNextActionSlot(
+    syntheticEvents,
+    matterId,
+    testMatter,
+    testEvidence,
+    syntheticRequestingUser,
+  );
+
+  assert.ok(
+    !/respond to jamie chen/i.test(derived.value),
+    "Firm-domain senders must be treated as our side; this assertion is load-bearing for isDocumentFromClientOrOwnSide",
   );
 });
