@@ -50,6 +50,7 @@ const derivedNextActionSlot = deriveNextActionSlot(
   operationalEvents,
   syntheticMatterBrief.matter.id,
   syntheticMatterBrief.matter,
+  evidenceProcessing.eligibleEvidence,
 );
 
 // Build the brief with derived slots and predefined other slots
