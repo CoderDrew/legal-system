@@ -1298,8 +1298,8 @@ function normalizedStatement(text: string): string {
 /**
  * Split on clause boundaries. `and` starts a new clause only when it
  * introduces a file transfer (resigned and the file was reassigned to
- * Y). Bare "and assigned to" stays one clause so two assignees remain
- * exactly-one UNKNOWN.
+ * Y). Any leftover `and` in the final clause makes that clause
+ * multi-part and therefore not clean.
  */
 function splitOwnerClauses(text: string): string[] {
   return normalizedStatement(text)
@@ -1308,6 +1308,10 @@ function splitOwnerClauses(text: string): string[] {
     )
     .map((clause) => clause.trim())
     .filter((clause) => clause.length > 0);
+}
+
+function isMultiPartOwnerClause(clause: string): boolean {
+  return /\band\b/i.test(clause);
 }
 
 function clauseStartsHistorical(clause: string): boolean {
@@ -1328,7 +1332,7 @@ function isCleanPositiveClause(clause: string, name: string): boolean {
   if (clauseStartsHistorical(text)) return false;
   return [
     `^(?:recorded|assigned|named|designated|appointed)\\s+${escaped}\\s+as\\s+(?:the\\s+)?(?:responsible\\s+attorney|owner|counsel(?:\\s+of\\s+record)?)$`,
-    `(?:^|and\\s+)(?:now\\s+)?(?:the\\s+file\\s+was\\s+)?(?:assigned|reassigned|transferred|handed(?:\\s+off)?)\\s+to\\s+${escaped}(?:\\s+and\\b|$)`,
+    `^(?:now\\s+)?(?:the\\s+file\\s+was\\s+)?(?:assigned|reassigned|transferred|handed(?:\\s+off)?)\\s+to\\s+${escaped}$`,
     `^(?:transferred|reassigned|handed(?:\\s+off)?)\\s+from\\b[\\s\\S]+?\\bto\\s+${escaped}$`,
     `(?:^|and\\s+)(?:noted\\s+that\\s+)?${escaped}\\s+(?:took\\s+over|has\\s+taken\\s+over|is\\s+taking\\s+over)(?:\\s+from\\b.*)?$`,
     `(?:^|and\\s+)(?:noted\\s+that\\s+)?${escaped}\\s+(?:will\\s+handle|is\\s+handling|handles)(?:\\s+[\\w][\\w\\s'-]*)?$`,
@@ -1352,7 +1356,7 @@ function inferOwnerFromActionText(
 ): string | null {
   const clauses = splitOwnerClauses(action);
   const last = clauses[clauses.length - 1];
-  if (!last || clauseStartsHistorical(last)) {
+  if (!last || clauseStartsHistorical(last) || isMultiPartOwnerClause(last)) {
     return null;
   }
   const assigned = mentionedFirmSideIdentities(
@@ -1679,12 +1683,11 @@ function isPositiveSchedulingTarget(
 }
 
 function clauseHasScheduleDisqualifier(clause: string): boolean {
-  const withoutContinuanceWas = clause.replace(
-    /\bwas\s+(?:continued|moved|rescheduled)\b/gi,
-    ""
-  );
-  return /(?:\b(?:cancel(?:led|ed)?|vacate(?:d)?|withdrawn|previously|originally|was)\b|\boff\s+calendar\b|\bwithout\s+date\b)/i.test(
-    withoutContinuanceWas
+  const withoutContinuanceDestination = clause
+    .replace(/\bwas\s+(?:continued|moved|rescheduled)\b/gi, "")
+    .replace(/\b(?:continued|moved|rescheduled)\s+to\b/gi, "");
+  return /(?:\b(?:cancel(?:led|ed)?|vacate(?:d)?|withdrawn|previously|originally|formerly|was|postponed|adjourned|stricken|continued|dropped|mooted)\b|\boff(?:\s+the)?\s+calendar\b|\bwithout\s+date\b|\bcalled\s+off\b|\bno\s+longer\b)/i.test(
+    withoutContinuanceDestination
   );
 }
 

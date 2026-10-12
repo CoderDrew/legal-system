@@ -5806,3 +5806,70 @@ test("important-date: vacated shortly before a later set-for date is UNKNOWN", (
     "vacated within 40 characters before the date must disqualify it",
   );
 });
+
+test("owner: transfer plus leftover and in the same clause is UNKNOWN", () => {
+  const cases = [
+    "Transferred to Rachel Morgan and later reassigned to Alex Thompson.",
+    "Reassigned to Rachel Morgan and Alex Thompson.",
+    "Transferred to Rachel Morgan and back to Alex Thompson.",
+    "Transferred to Rachel Morgan and she resigned.",
+    "Transferred to Rachel Morgan and she withdrew.",
+  ];
+
+  for (const action of cases) {
+    const derived = deriveOwnerFromAction(
+      `test-matter-owner-and-clause-${action.length}`,
+      action,
+      "Responsible attorney",
+    );
+    assert.equal(
+      derived.state,
+      "UNKNOWN",
+      `${JSON.stringify(action)} must be UNKNOWN, got ${derived.state} / ${derived.value}`,
+    );
+    assert.equal(derived.value, "Unknown");
+    assert.notEqual(derived.value, "Rachel Morgan");
+    assert.notEqual(derived.value, "Alex Thompson");
+  }
+});
+
+test("important-date: postponed and related clause words disqualify set-for Oct 15", () => {
+  const cases = [
+    "Hearing postponed, set for Oct 15, 2026",
+    "Hearing adjourned, set for Oct 15, 2026",
+    "Hearing stricken, set for Oct 15, 2026",
+    "Hearing continued generally, set for Oct 15, 2026",
+    "Hearing off the calendar, set for Oct 15, 2026",
+    "Hearing formerly set for Oct 15, 2026",
+    "Hearing dropped, set for Oct 15, 2026",
+    "Hearing called off, set for Oct 15, 2026",
+    "Hearing no longer set for Oct 15, 2026",
+    "Hearing mooted, set for Oct 15, 2026",
+  ];
+
+  for (const action of cases) {
+    const matterId = `test-matter-date-postponed-${action.length}`;
+    const derived = deriveImportantDateSlot(
+      [
+        scheduleStatusEvent({
+          matterId,
+          eventId: `${matterId}-schedule`,
+          occurredAt: "2026-09-12T09:00:00Z",
+          sourceRecordedAt: "2026-09-12T09:00:00Z",
+          action,
+          object: "Hearing",
+        }),
+      ],
+      matterId,
+      IMPORTANT_DATE_AS_OF,
+    );
+    assert.equal(
+      derived.state,
+      "UNKNOWN",
+      `${JSON.stringify(action)} must be UNKNOWN, got ${derived.state} / ${derived.value}`,
+    );
+    assert.equal(derived.value, "Unknown");
+    assert.notEqual(derived.value, "October 15, 2026");
+    assert.notEqual(derived.value, "2026-10-15");
+  }
+});
