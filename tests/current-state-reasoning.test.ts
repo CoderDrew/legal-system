@@ -4281,7 +4281,7 @@ test("owner: structured actor name is SUPPORTED", () => {
   assert.deepEqual(derived.evidenceIds, [`${matterId}-artifact-resp`]);
 });
 
-test("owner: attorney role label resolves to the responsible attorney", () => {
+test("owner: attorney role label without a named person is UNKNOWN", () => {
   const matterId = "test-matter-owner-role";
   const derived = deriveOwnerSlot(
     [
@@ -4549,7 +4549,7 @@ test("owner: matter isolation ignores another matter's assignment", () => {
         matterId: otherMatterId,
         eventType: "RESPONSIBILITY_RECORDED",
         occurredAt: "2026-09-12T09:00:00Z",
-        actor: "Priya Nair",
+        actor: "Alex Thompson",
         action: "Took over the other file.",
         object: null,
         provenance: {
@@ -4569,6 +4569,7 @@ test("owner: matter isolation ignores another matter's assignment", () => {
   );
 
   assert.equal(derived.state, "UNKNOWN");
+  assert.equal(derived.value, "Unknown");
   assert.equal(derived.evidenceIds.length, 0);
 });
 
@@ -4807,4 +4808,102 @@ test("owner: replacing/from/to text does not keep the outgoing owner", () => {
     );
     assert.equal(derived.value, "Unknown");
   }
+});
+
+function deriveOwnerFromAction(
+  matterId: string,
+  action: string,
+  object: string | null = null,
+): ReturnType<typeof deriveOwnerSlot> {
+  return deriveOwnerSlot(
+    [
+      makeOwnerEvent({
+        eventId: `${matterId}-resp`,
+        matterId,
+        eventType: "RESPONSIBILITY_RECORDED",
+        occurredAt: "2026-09-12T09:00:00Z",
+        actor: null,
+        action,
+        object,
+        provenance: {
+          sourceArtifactId: `${matterId}-artifact-resp`,
+          sourceSystem: "Clio",
+          sourceRecordedAt: "2026-09-12T09:00:00Z",
+          associationMethod: "AUTHORITATIVE_SOURCE_RELATIONSHIP",
+          evidenceExcerpt: "assignment",
+        },
+      }),
+    ],
+    matterId,
+    makeOwnerMatter(matterId),
+    [],
+    syntheticRequestingUser,
+    OWNER_AS_OF,
+  );
+}
+
+test("owner: passive replaced-by yields the incoming owner", () => {
+  const knownIncoming = deriveOwnerFromAction(
+    "test-matter-owner-passive-known",
+    "Alex Thompson was replaced by Rachel Morgan.",
+    "Responsible attorney",
+  );
+  assert.equal(knownIncoming.value, "Rachel Morgan");
+  assert.notEqual(knownIncoming.value, "Alex Thompson");
+
+  const unknownIncoming = deriveOwnerFromAction(
+    "test-matter-owner-passive-unknown",
+    "Alex Thompson was replaced by Jamie Lee.",
+    "Responsible attorney",
+  );
+  assert.equal(unknownIncoming.state, "UNKNOWN");
+  assert.equal(unknownIncoming.value, "Unknown");
+  assert.notEqual(unknownIncoming.value, "Alex Thompson");
+});
+
+test("owner: bare from with no incoming owner is UNKNOWN", () => {
+  const derived = deriveOwnerFromAction(
+    "test-matter-owner-bare-from",
+    "Reassigned from Alex Thompson.",
+    "Responsible attorney",
+  );
+  assert.equal(derived.state, "UNKNOWN");
+  assert.equal(derived.value, "Unknown");
+  assert.notEqual(derived.value, "Alex Thompson");
+});
+
+test("owner: removed with no incoming owner is UNKNOWN", () => {
+  const derived = deriveOwnerFromAction(
+    "test-matter-owner-removed",
+    "Removed Alex Thompson as responsible attorney.",
+    "Responsible attorney",
+  );
+  assert.equal(derived.state, "UNKNOWN");
+  assert.equal(derived.value, "Unknown");
+  assert.notEqual(derived.value, "Alex Thompson");
+});
+
+test("owner: former with no incoming owner is UNKNOWN", () => {
+  const derived = deriveOwnerFromAction(
+    "test-matter-owner-former",
+    "Recorded Alex Thompson as the former responsible attorney.",
+    "Responsible attorney",
+  );
+  assert.equal(derived.state, "UNKNOWN");
+  assert.equal(derived.value, "Unknown");
+  assert.notEqual(derived.value, "Alex Thompson");
+});
+
+test("owner: first mentioned known name does not win a transfer", () => {
+  const derived = deriveOwnerFromAction(
+    "test-matter-owner-first-name-wins",
+    "Transferred from Alex Thompson to Rachel Morgan.",
+    "Responsible attorney",
+  );
+  assert.equal(derived.value, "Rachel Morgan");
+  assert.notEqual(
+    derived.value,
+    "Alex Thompson",
+    "Outgoing name appears first; returning it means first-mentioned wins",
+  );
 });

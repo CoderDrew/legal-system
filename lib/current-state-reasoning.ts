@@ -1277,6 +1277,10 @@ function actionMentionsPerson(action: string, personName: string): boolean {
   return new RegExp(`\\b${escaped}\\b`, "i").test(action);
 }
 
+function boundPersonName(personName: string): string {
+  return personName.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function mentionedFirmSideIdentities(
   text: string,
   matter: SyntheticMatter,
@@ -1287,43 +1291,103 @@ function mentionedFirmSideIdentities(
   );
 }
 
-function actionHasTransferLanguage(action: string): boolean {
+function hasIncomingRolePhrase(action: string): boolean {
   return (
-    /\breplac(?:ing|ed)\b/i.test(action) || /\bfrom\b[\s\S]+\bto\b/i.test(action)
+    /\breplaced\s+by\b/i.test(action) ||
+    /\bsucceeded\s+by\b/i.test(action) ||
+    /\b(?:reassigned|transferred|assigned|handed(?:\s+off)?)\s+to\b/i.test(
+      action
+    ) ||
+    (/\bfrom\b/i.test(action) && /\bto\b/i.test(action))
   );
 }
 
 /**
- * Drop outgoing-owner clauses so "replacing X" / "from X to Y" do not
- * treat X as the current owner.
+ * True when the name is in an incoming-owner role: replaced by Y,
+ * succeeded by Y, assigned/transferred to Y, or from … to Y.
  */
-function stripOutgoingOwnerPhrases(action: string): string {
-  return action
-    .replace(/\breplacing\s+[^,.]+/gi, " ")
-    .replace(/\breplaced\s+by\s+[^,.]+/gi, " ")
-    .replace(/\bfrom\s+[^,.]+?\s+(?=to\b)/gi, "");
+function isIncomingOwnerMention(action: string, name: string): boolean {
+  const escaped = boundPersonName(name);
+  if (!escaped) return false;
+  return (
+    new RegExp(`\\breplaced\\s+by\\s+${escaped}\\b`, "i").test(action) ||
+    new RegExp(`\\bsucceeded\\s+by\\s+${escaped}\\b`, "i").test(action) ||
+    new RegExp(
+      `\\b(?:reassigned|transferred|assigned|handed(?:\\s+off)?)\\s+to\\s+${escaped}\\b`,
+      "i"
+    ).test(action) ||
+    new RegExp(`\\bfrom\\b[\\s\\S]+?\\bto\\s+${escaped}\\b`, "i").test(action)
+  );
+}
+
+/**
+ * True when the name is in an outgoing-owner role: replacing X,
+ * X was replaced, from X, removed X, former X, X as the former.
+ * Sentence-level "removed" / "former" also mark mentioned names as
+ * outgoing unless they already have an incoming role.
+ */
+function isOutgoingOwnerMention(action: string, name: string): boolean {
+  const escaped = boundPersonName(name);
+  if (!escaped || !actionMentionsPerson(action, name)) return false;
+  if (isIncomingOwnerMention(action, name)) return false;
+  return (
+    new RegExp(`\\breplacing\\s+${escaped}\\b`, "i").test(action) ||
+    new RegExp(
+      `\\b${escaped}\\b\\s+(?:was|were|got|is|has\\s+been)\\s+replaced\\b`,
+      "i"
+    ).test(action) ||
+    new RegExp(`\\bfrom\\s+${escaped}\\b`, "i").test(action) ||
+    new RegExp(`\\bremov(?:ed|ing)\\s+${escaped}\\b`, "i").test(action) ||
+    new RegExp(
+      `\\b(?:former(?:ly)?|previously)\\s+${escaped}\\b`,
+      "i"
+    ).test(action) ||
+    new RegExp(`\\b${escaped}\\b[\\s\\S]*?\\bas\\s+the\\s+former\\b`, "i").test(
+      action
+    ) ||
+    (/\bremov(?:ed|ing)\b/i.test(action) &&
+      actionMentionsPerson(action, name)) ||
+    (/\bformer(?:ly)?\b/i.test(action) && actionMentionsPerson(action, name))
+  );
 }
 
 /**
  * Text fallback: match known firm-side identities in action text.
- * Transfer language (replacing / from…to) prefers the incoming owner.
- * Ambiguous or unknown incoming owners yield null.
+ * Incoming-owner roles win over outgoing-owner roles. A transfer or
+ * removal with no known incoming owner is UNKNOWN — the outgoing name
+ * is not the current owner.
  */
 function inferOwnerFromActionText(
   action: string,
   matter: SyntheticMatter,
   requestingUser: SyntheticUser
 ): string | null {
-  const searchText = actionHasTransferLanguage(action)
-    ? stripOutgoingOwnerPhrases(action)
-    : action;
   const mentioned = mentionedFirmSideIdentities(
-    searchText,
+    action,
     matter,
     requestingUser
   );
-  if (mentioned.length === 1) {
-    return mentioned[0];
+  const incoming = mentioned.filter((name) =>
+    isIncomingOwnerMention(action, name)
+  );
+  const outgoing = mentioned.filter((name) =>
+    isOutgoingOwnerMention(action, name)
+  );
+  const unmarked = mentioned.filter(
+    (name) => !incoming.includes(name) && !outgoing.includes(name)
+  );
+
+  if (incoming.length === 1) {
+    return incoming[0];
+  }
+  if (incoming.length > 1) {
+    return null;
+  }
+  if (hasIncomingRolePhrase(action)) {
+    return null;
+  }
+  if (unmarked.length === 1) {
+    return unmarked[0];
   }
   return null;
 }
@@ -1350,9 +1414,10 @@ function ownerClaim(
  * identities (responsible attorney or requesting user). A role label
  * such as "Responsible attorney" is not the person. Email local-part
  * matching is used when the source artifact identifies a known person.
- * Text is an INFERRED fallback that only matches those known identities,
- * with replacing/from/to treated as a transfer. UNKNOWN when the
- * evidence does not support an owner.
+ * Text is an INFERRED fallback that only matches those known identities.
+ * Incoming-owner roles (replaced by, to) win; outgoing-owner roles
+ * (replacing, from, removed, former) do not. UNKNOWN when the evidence
+ * does not support an owner.
  *
  * Smith v. Acme is SUPPORTED because the event action names Alex
  * Thompson, a known firm-side identity, on a responsibility recording —
