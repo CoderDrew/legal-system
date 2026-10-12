@@ -1291,95 +1291,57 @@ function mentionedFirmSideIdentities(
   );
 }
 
-function positiveAssignmentPatternSources(escaped: string): string[] {
-  return [
-    `\\b(?:recorded|assigned|named|designated|appointed)\\s+${escaped}\\s+as\\s+(?:the\\s+)?(?:responsible\\s+attorney|owner|counsel(?:\\s+of\\s+record)?)\\b`,
-    `\\b${escaped}\\b\\s+(?:took\\s+over|has\\s+taken\\s+over|is\\s+taking\\s+over)\\b`,
-    `\\b${escaped}\\b\\s+(?:will\\s+handle|is\\s+handling|handles)\\b`,
-    `\\breplaced\\s+by\\s+${escaped}\\b`,
-    `\\bsucceeded\\s+by\\s+${escaped}\\b`,
-    `\\b(?:reassigned|transferred|assigned|handed(?:\\s+off)?)\\s+to\\s+${escaped}\\b`,
-    `\\bfrom\\b[\\s\\S]+?\\bto\\s+${escaped}\\b`,
-  ];
+function normalizedStatement(text: string): string {
+  return text.trim().replace(/[.]+$/g, "").trim();
 }
 
 /**
- * True when the name sits in a positive assignment construction — the
- * only text path that can produce an owner. Mentioning a name next to a
- * role label, or in departure wording, is not enough.
+ * The whole statement is a single clean positive assignment of this
+ * name — nothing before or after except an optional "noted that"
+ * report prefix and a same-clause object after handle. Extra clauses
+ * and qualifiers fail the anchor rather than matching a denylist.
  */
-function isPositiveAssignmentMention(action: string, name: string): boolean {
-  const escaped = boundPersonName(name);
-  if (!escaped) return false;
-  return positiveAssignmentPatternSources(escaped).some((source) =>
-    new RegExp(source, "i").test(action)
-  );
-}
-
-function positiveAssignmentSpans(
+function isCleanPositiveAssignmentStatement(
   action: string,
   name: string
-): Array<{ start: number; end: number }> {
-  const escaped = boundPersonName(name);
-  if (!escaped) return [];
-  const spans: Array<{ start: number; end: number }> = [];
-  for (const source of positiveAssignmentPatternSources(escaped)) {
-    for (const match of action.matchAll(new RegExp(source, "gi"))) {
-      if (match.index === undefined) continue;
-      spans.push({
-        start: match.index,
-        end: match.index + match[0].length,
-      });
-    }
-  }
-  return spans;
-}
-
-function clauseContaining(text: string, index: number): string {
-  const start = Math.max(
-    text.lastIndexOf(".", index - 1),
-    text.lastIndexOf(";", index - 1)
-  );
-  return text.slice(start + 1, index);
-}
-
-function assignmentHasHistoricalQualifier(
-  action: string,
-  spanStart: number
 ): boolean {
-  return /\b(?:originally|previously|formerly|initially|once|earlier)\b/i.test(
-    clauseContaining(action, spanStart)
-  );
-}
-
-function assignmentHasFollowingReversal(following: string): boolean {
-  return (
-    /\b(?:then|later|subsequently|who(?:\s+later)?)\s+(?:withdrew|withdrawn|resigned|stepped\s+down|departed|left(?:\s+the\s+(?:firm|matter|file))?)\b/i.test(
-      following
-    ) ||
-    /\bnow\s+(?:unassigned|un-assigned|no longer assigned)\b/i.test(following)
-  );
+  const escaped = boundPersonName(name);
+  if (!escaped) return false;
+  const statement = normalizedStatement(action);
+  return [
+    `^(?:recorded|assigned|named|designated|appointed)\\s+${escaped}\\s+as\\s+(?:the\\s+)?(?:responsible\\s+attorney|owner|counsel(?:\\s+of\\s+record)?)$`,
+    `^assigned\\s+to\\s+${escaped}$`,
+    `^(?:noted\\s+that\\s+)?${escaped}\\s+(?:took\\s+over|has\\s+taken\\s+over|is\\s+taking\\s+over)$`,
+    `^(?:noted\\s+that\\s+)?${escaped}\\s+(?:will\\s+handle|is\\s+handling|handles)(?:\\s+[\\w][\\w\\s'-]*)?$`,
+  ].some((source) => new RegExp(source, "i").test(statement));
 }
 
 /**
- * A positive assignment that is qualified as historical, or followed by
- * a reversal or departure of that same person, is not a current owner.
+ * Exception: a recognized transfer or replacement whose incoming owner
+ * is this name. The incoming construction is anchored at the end of the
+ * statement.
  */
-function isCurrentPositiveAssignment(action: string, name: string): boolean {
-  if (!isPositiveAssignmentMention(action, name)) return false;
-  const spans = positiveAssignmentSpans(action, name);
-  return spans.some(
-    (span) =>
-      !assignmentHasHistoricalQualifier(action, span.start) &&
-      !assignmentHasFollowingReversal(action.slice(span.end))
-  );
+function isIncomingOwnerInRecognizedTransfer(
+  action: string,
+  name: string
+): boolean {
+  const escaped = boundPersonName(name);
+  if (!escaped) return false;
+  const statement = normalizedStatement(action);
+  return [
+    `^(?:transferred|reassigned|handed(?:\\s+off)?)\\s+from\\b[\\s\\S]+?\\bto\\s+${escaped}$`,
+    `^[\\s\\S]+?\\bwas\\s+replaced\\s+by\\s+${escaped}$`,
+    `^replaced\\s+by\\s+${escaped}$`,
+    `^succeeded\\s+by\\s+${escaped}$`,
+    `^[\\s\\S]+?\\bnow\\s+(?:assigned|reassigned|transferred|handed(?:\\s+off)?)\\s+to\\s+${escaped}$`,
+  ].some((source) => new RegExp(source, "i").test(statement));
 }
 
 /**
  * Text fallback: a known firm-side identity becomes owner only when the
- * action is a current positive assignment of that person. A lone name, a
- * role label, departure wording, or a reversed/historical assignment
- * without an incoming owner is not enough. Exactly one current assigned
+ * whole statement is a clean positive assignment of that person, or a
+ * recognized transfer/replacement that names them as the incoming
+ * owner. Extra clauses make the statement UNKNOWN. Exactly one such
  * name is required.
  */
 function inferOwnerFromActionText(
@@ -1387,13 +1349,22 @@ function inferOwnerFromActionText(
   matter: SyntheticMatter,
   requestingUser: SyntheticUser
 ): string | null {
-  const assigned = mentionedFirmSideIdentities(
+  const identities = mentionedFirmSideIdentities(
     action,
     matter,
     requestingUser
-  ).filter((name) => isCurrentPositiveAssignment(action, name));
+  );
+  const assigned = identities.filter((name) =>
+    isCleanPositiveAssignmentStatement(action, name)
+  );
   if (assigned.length === 1) {
     return assigned[0];
+  }
+  const incoming = identities.filter((name) =>
+    isIncomingOwnerInRecognizedTransfer(action, name)
+  );
+  if (incoming.length === 1) {
+    return incoming[0];
   }
   return null;
 }
@@ -1420,17 +1391,15 @@ function ownerClaim(
  * identities (responsible attorney or requesting user). A role label
  * such as "Responsible attorney" is not the person. Email local-part
  * matching is used when the source artifact identifies a known person.
- * Text is an INFERRED fallback only when the action is a current
- * positive assignment of a known firm-side identity
- * (recorded/assigned/named as responsible attorney, took over,
- * replaced by, transferred to, and equivalent constructions). A lone
- * name, including one paired with a role label, is UNKNOWN. A positive
- * assignment qualified as historical or followed by a reversal or
- * departure of that person is UNKNOWN unless a different incoming
- * owner is named.
+ * Text is an INFERRED fallback only when the whole statement is a
+ * clean positive assignment of a known firm-side identity, or a
+ * recognized transfer/replacement that names the incoming owner.
+ * Extra clauses are UNKNOWN — missing an inferred owner is acceptable;
+ * a reversed one is not. A lone name, including one paired with a role
+ * label, is UNKNOWN.
  *
  * Smith v. Acme is SUPPORTED because its event action is
- * "Recorded Alex Thompson as the responsible attorney." — a current
+ * "Recorded Alex Thompson as the responsible attorney." — a clean
  * positive assignment of a known firm-side identity, not a special case.
  */
 export function deriveOwnerSlot(
@@ -1676,47 +1645,81 @@ function datesEqual(left: CalendarDate, right: CalendarDate): boolean {
   );
 }
 
+function clauseBefore(text: string, index: number): string {
+  const start = Math.max(
+    text.lastIndexOf(".", index - 1),
+    text.lastIndexOf(";", index - 1)
+  );
+  return text.slice(start + 1, index);
+}
+
 /**
- * When text names more than one calendar date, keep a date only if the
- * construction marks it as the destination of a change (to/now after a
- * continuance, reschedule, or similar). Otherwise the dates are
- * ambiguous.
+ * A date counts only as the target of a positive scheduling form:
+ * set for, scheduled for, due, by, or continued/moved/rescheduled to.
+ * Bare "to" is not a destination.
+ */
+function isPositiveSchedulingTarget(
+  text: string,
+  date: CalendarDateMatch
+): boolean {
+  const before = text.slice(0, date.index);
+  if (
+    /(?:\bset\s+for|\bscheduled\s+for|\bdue(?:\s+on)?|\bby)\s+$/i.test(before)
+  ) {
+    return true;
+  }
+  return (
+    /\bto\s+$/i.test(before) &&
+    /\b(?:continued|moved|rescheduled)\b/i.test(clauseBefore(text, date.index))
+  );
+}
+
+/**
+ * Qualifiers attached to this date — from/was/previously before it,
+ * cancel/vacate/TBD after it, or TBD anywhere in the statement — mean
+ * it is not a current target.
+ */
+function dateHasDisqualifyingAttachment(
+  text: string,
+  date: CalendarDateMatch
+): boolean {
+  if (/\btbd\b/i.test(text)) {
+    return true;
+  }
+  const before = text.slice(0, date.index);
+  const after = text.slice(date.index + date.length);
+  if (/\b(?:from|was|previously)\s+$/i.test(before)) {
+    return true;
+  }
+  if (/\bvacated\b[\s\S]{0,40}$/i.test(before)) {
+    return true;
+  }
+  return /^\s*[,).]?\s*(?:cancelled|canceled|cancel|vacated|vacate)\b/i.test(
+    after
+  );
+}
+
+/**
+ * Text fallback: keep a date only when it is the unique current target
+ * of a positive scheduling form, with no attached qualifier. A lone
+ * calendar date in the sentence is not enough.
  */
 function pickCurrentCalendarDate(
   dates: CalendarDateMatch[],
   text: string
 ): CalendarDate | null {
-  if (dates.length === 0) {
-    return null;
-  }
-  if (dates.length === 1) {
-    return dates[0];
-  }
-
-  const destination: CalendarDateMatch[] = [];
-  for (const date of dates) {
-    const preceding = text.slice(0, date.index);
-    if (
-      /\b(?:to|until|now(?:\s+(?:set\s+for|scheduled\s+for))?)\s+$/i.test(
-        preceding
-      )
-    ) {
-      destination.push(date);
-    }
-  }
-
-  if (destination.length === 1) {
-    return destination[0];
-  }
-
-  const unique = destination.filter(
+  const current = dates.filter(
+    (date) =>
+      isPositiveSchedulingTarget(text, date) &&
+      !dateHasDisqualifyingAttachment(text, date)
+  );
+  const unique = current.filter(
     (date, index, all) =>
       all.findIndex((other) => datesEqual(other, date)) === index
   );
   if (unique.length === 1) {
     return unique[0];
   }
-
   return null;
 }
 
@@ -1749,14 +1752,16 @@ function importantDateClaim(
  *
  * Structured data first: the latest SCHEDULE_STATUS_REPORTED event at or
  * before asOf, via getLatestEvent. If the object itself is a complete
- * calendar date, that date is SUPPORTED. Otherwise text is an INFERRED
- * fallback only when the action contains an explicit calendar date
- * (ISO, month-name, or numeric). Relative phrasing is not a date.
+ * valid calendar date, that date is SUPPORTED. Otherwise text is an
+ * INFERRED fallback only when a date is the unique target of a
+ * positive scheduling form (set for, scheduled for, due, by,
+ * continued/moved/rescheduled to). Relative phrasing, bare "to",
+ * from/was/previously/cancel/vacate/TBD attachments, and ambiguity are
+ * UNKNOWN. Numeric dates in text are US MM/DD/YYYY. Comparison with
+ * asOf is by UTC calendar day.
  *
- * Later schedule events supersede earlier ones, including date changes
- * and continuances. When one event names more than one date, only a
- * destination construction (to/now) can select among them. A date
- * whose UTC calendar day is before asOf is no longer current.
+ * Later schedule events supersede earlier ones. A date whose UTC
+ * calendar day is before asOf is no longer current.
  *
  * Event timestamps are when the report was recorded, not the scheduled
  * date. Smith v. Acme is UNKNOWN because its schedule event object is

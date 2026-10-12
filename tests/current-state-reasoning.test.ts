@@ -5491,3 +5491,163 @@ test("important-date: structured date wins over a different date in action text"
   assert.equal(derived.state, "SUPPORTED");
   assert.equal(derived.value, "October 15, 2026");
 });
+
+test("owner: extra clauses do not keep a reversed assignment", () => {
+  const cases: Array<{ action: string; expected: string }> = [
+    {
+      action: "Assigned to Alex Thompson in 2024, but he has since withdrawn.",
+      expected: "Unknown",
+    },
+    {
+      action: "Alex Thompson took over; he withdrew last week.",
+      expected: "Unknown",
+    },
+    {
+      action: "Assigned to Alex Thompson at intake; currently unassigned.",
+      expected: "Unknown",
+    },
+    {
+      action: "At first assigned to Alex Thompson.",
+      expected: "Unknown",
+    },
+    {
+      action: "Assigned to Alex Thompson.",
+      expected: "Alex Thompson",
+    },
+    {
+      action: "Alex Thompson took over.",
+      expected: "Alex Thompson",
+    },
+    {
+      action: "Named Rachel Morgan as counsel of record.",
+      expected: "Rachel Morgan",
+    },
+    {
+      action: "Assigned to Alex Thompson pending coverage.",
+      expected: "Unknown",
+    },
+  ];
+
+  for (const { action, expected } of cases) {
+    const derived = deriveOwnerFromAction(
+      `test-matter-owner-clause-${action.length}`,
+      action,
+      "Responsible attorney",
+    );
+    assert.equal(
+      derived.value,
+      expected,
+      `${JSON.stringify(action)} must yield ${expected}, got ${derived.value}`,
+    );
+    if (expected === "Unknown") {
+      assert.notEqual(
+        derived.value,
+        "Alex Thompson",
+        `${JSON.stringify(action)} must not keep the reversed owner`,
+      );
+      assert.equal(derived.state, "UNKNOWN");
+    }
+  }
+});
+
+test("important-date: text dates require a positive scheduling form", () => {
+  const cases: Array<{ action: string; expected: string }> = [
+    { action: "continued from 2026-10-15", expected: "Unknown" },
+    {
+      action: "on 2026-10-15 continued; new date TBD",
+      expected: "Unknown",
+    },
+    { action: "vacated (was 2026-10-15)", expected: "Unknown" },
+    { action: "2026-10-15 cancelled", expected: "Unknown" },
+    { action: "previously 2026-10-15", expected: "Unknown" },
+    {
+      action: "Respond to 2026-10-01 order by 2026-10-20",
+      expected: "October 20, 2026",
+    },
+    {
+      action: "Hearing set for 2026-10-15",
+      expected: "October 15, 2026",
+    },
+    {
+      action: "Hearing scheduled for 2026-10-15 cancelled",
+      expected: "Unknown",
+    },
+  ];
+
+  for (const { action, expected } of cases) {
+    const matterId = `test-matter-date-form-${action.length}`;
+    const derived = deriveImportantDateSlot(
+      [
+        scheduleStatusEvent({
+          matterId,
+          eventId: `${matterId}-schedule`,
+          occurredAt: "2026-09-12T09:00:00Z",
+          sourceRecordedAt: "2026-09-12T09:00:00Z",
+          action,
+          object: "Hearing",
+        }),
+      ],
+      matterId,
+      IMPORTANT_DATE_AS_OF,
+    );
+    assert.equal(
+      derived.value,
+      expected,
+      `${JSON.stringify(action)} must yield ${expected}, got ${derived.value}`,
+    );
+    assert.notEqual(
+      derived.value,
+      "October 1, 2026",
+      `${JSON.stringify(action)} must not treat a bare to/from date as current`,
+    );
+    if (expected === "Unknown") {
+      assert.equal(derived.state, "UNKNOWN");
+      assert.notEqual(derived.value, "October 15, 2026");
+    }
+  }
+});
+
+test("important-date: invalid calendar date 2026-02-30 is UNKNOWN", () => {
+  const matterId = "test-matter-date-invalid-feb-30";
+  const structured = deriveImportantDateSlot(
+    [
+      scheduleStatusEvent({
+        matterId,
+        eventId: `${matterId}-structured`,
+        occurredAt: "2026-09-12T09:00:00Z",
+        sourceRecordedAt: "2026-09-12T09:00:00Z",
+        action: "Recorded the hearing date.",
+        object: "2026-02-30",
+        artifactId: `${matterId}-artifact-structured`,
+      }),
+    ],
+    matterId,
+    IMPORTANT_DATE_AS_OF,
+  );
+  assert.equal(structured.state, "UNKNOWN");
+  assert.equal(structured.value, "Unknown");
+  assert.notEqual(
+    structured.value,
+    "March 2, 2026",
+    "2026-02-30 must not roll over through Date.UTC",
+  );
+
+  const fromText = deriveImportantDateSlot(
+    [
+      scheduleStatusEvent({
+        matterId,
+        eventId: `${matterId}-text`,
+        occurredAt: "2026-09-12T09:00:00Z",
+        sourceRecordedAt: "2026-09-12T09:00:00Z",
+        action: "Reported that the hearing is scheduled for 2026-02-30.",
+        object: "Hearing",
+        artifactId: `${matterId}-artifact-text`,
+      }),
+    ],
+    matterId,
+    IMPORTANT_DATE_AS_OF,
+  );
+  assert.equal(fromText.state, "UNKNOWN");
+  assert.equal(fromText.value, "Unknown");
+  assert.notEqual(fromText.value, "March 2, 2026");
+});
