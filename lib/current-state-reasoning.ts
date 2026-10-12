@@ -1657,12 +1657,122 @@ function clauseAround(text: string, index: number): string {
   return text.slice(from, end);
 }
 
+function calendarDateTokenPattern(): string {
+  const monthNames = Object.keys(MONTH_INDEX).join("|");
+  return `(?:\\d{4}-\\d{2}-\\d{2}|(?:${monthNames})\\s+\\d{1,2}(?:st|nd|rd|th)?,?\\s+\\d{4}|\\d{1,2}/\\d{1,2}/\\d{4})`;
+}
+
+/**
+ * After the date, only an optional time, optional place, and
+ * punctuation may follow. Anything else means the date is not current.
+ */
+function allowedScheduleAfterDatePattern(): string {
+  const time = `(?:\\s+at\\s+\\d{1,2}(?::\\d{2})?(?:\\s*(?:a\\.?m\\.?|p\\.?m\\.?))?)?`;
+  const place = `(?:\\s+(?:in|at)\\s+(?!\\d)(?:the\\s+)?[A-Za-z][\\w'-]*(?:\\s+[A-Za-z0-9][\\w'-]*){0,4})?`;
+  return `${time}${place}`;
+}
+
+/**
+ * Text before the scheduling form may only be a reporting wrapper plus
+ * a plain event subject (Hearing, Trial, Deposition of X, Motion
+ * hearing, Brief, Respond to … order). Any other prefix is UNKNOWN.
+ */
+function isPlainScheduleSubject(prefix: string): boolean {
+  let text = normalizedStatement(prefix);
+  text = text.replace(/^(?:reported|noted|recorded)\s+that\s+/i, "").trim();
+  if (!text) return true;
+  if (/^respond\s+to\b[\s\S]+\border$/i.test(text)) return true;
+  return /^(?:the\s+)?(?:(?:motion|settlement)\s+)?(?:hearing|trial|conference|deposition|brief|filing|deadline|motion|order)(?:\s+hearing)?(?:\s+of\s+[A-Za-z][\w\s'-]*)?(?:\s+is)?$/i.test(
+    text
+  );
+}
+
+function hasContinuanceVerb(text: string): boolean {
+  return /\b(?:continued|moved|rescheduled)\b/i.test(text);
+}
+
+function continuanceToFormPattern(): string {
+  return `(?:\\bwas\\s+)?\\b(?:continued|moved|rescheduled)(?:\\s+from\\s+${calendarDateTokenPattern()})?\\s+to`;
+}
+
+function setForFormPattern(): string {
+  return `\\b(?:set\\s+for|scheduled\\s+for|due(?:\\s+on)?|by)`;
+}
+
+/**
+ * continued/moved/rescheduled to counts only when a calendar date
+ * directly follows "to". Otherwise the statement is UNKNOWN and no
+ * earlier date is used.
+ */
+function statementHasUnresolvedContinuance(text: string): boolean {
+  const date = calendarDateTokenPattern();
+  const re = new RegExp(
+    `\\b(?:continued|moved|rescheduled)(?:\\s+from\\s+${date})?\\s+to\\b`,
+    "gi"
+  );
+  for (const match of text.matchAll(re)) {
+    if (match.index === undefined) continue;
+    const after = text.slice(match.index + match[0].length).trimStart();
+    if (!new RegExp(`^${date}`, "i").test(after)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function matchAnchoredScheduleDate(
+  statement: string,
+  formPattern: string
+): CalendarDate | null {
+  const date = calendarDateTokenPattern();
+  const after = allowedScheduleAfterDatePattern();
+  const match = statement.match(
+    new RegExp(`^(.*?)${formPattern}\\s+(${date})${after}$`, "i")
+  );
+  if (!match) return null;
+  if (!isPlainScheduleSubject(match[1])) return null;
+  return parseCompleteCalendarDate(match[2]);
+}
+
+function matchSentenceScheduleDate(sentence: string): CalendarDate | null {
+  if (hasContinuanceVerb(sentence)) {
+    return matchAnchoredScheduleDate(sentence, continuanceToFormPattern());
+  }
+  return matchAnchoredScheduleDate(sentence, setForFormPattern());
+}
+
+/**
+ * Each period-separated sentence must be a clean schedule: plain
+ * subject, then a form, then a date, then only time/place/punctuation.
+ * An unresolved continuance anywhere makes the whole statement UNKNOWN.
+ */
+function inferCleanScheduleDate(text: string): CalendarDate | null {
+  const statement = normalizedStatement(text);
+  if (!statement) return null;
+  if (statementHasUnresolvedContinuance(statement)) {
+    return null;
+  }
+  const sentences = statement
+    .split(/\.(?:\s+|$)/)
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => sentence.length > 0);
+  const found: CalendarDate[] = [];
+  for (const sentence of sentences) {
+    const date = matchSentenceScheduleDate(sentence);
+    if (date) found.push(date);
+  }
+  const unique = found.filter(
+    (date, index, all) =>
+      all.findIndex((other) => datesEqual(other, date)) === index
+  );
+  return unique.length === 1 ? unique[0] : null;
+}
+
 /**
  * A date counts only as the target of a positive scheduling form:
  * set for, scheduled for, due, by, or continued/moved/rescheduled to.
- * Bare "to" is not a destination. Optional from/was/previously between
- * the form and the date is still a positive form so those qualifiers
- * can be rejected by the attachment rules rather than silently matching.
+ * Bare "to" is not a destination. The date must follow the form
+ * immediately.
  */
 function isPositiveSchedulingTarget(
   text: string,
@@ -1670,22 +1780,20 @@ function isPositiveSchedulingTarget(
 ): boolean {
   const before = text.slice(0, date.index);
   if (
-    /(?:\bset\s+for|\bscheduled\s+for|\bdue(?:\s+on)?|\bby)\s+(?:(?:from|was|previously)\s+)?$/i.test(
-      before
-    )
+    /(?:\bset\s+for|\bscheduled\s+for|\bdue(?:\s+on)?|\bby)\s+$/i.test(before)
   ) {
     return true;
   }
-  return (
-    /\bto\s+$/i.test(before) &&
-    /\b(?:continued|moved|rescheduled)\b/i.test(clauseAround(text, date.index))
-  );
+  return new RegExp(
+    `\\b(?:continued|moved|rescheduled)(?:\\s+from\\s+${calendarDateTokenPattern()})?\\s+to\\s+$`,
+    "i"
+  ).test(before);
 }
 
 function clauseHasScheduleDisqualifier(clause: string): boolean {
   const withoutContinuanceDestination = clause
     .replace(/\bwas\s+(?:continued|moved|rescheduled)\b/gi, "")
-    .replace(/\b(?:continued|moved|rescheduled)\s+to\b/gi, "");
+    .replace(/\b(?:continued|moved|rescheduled)\s+(?:from|to)\b/gi, "");
   return /(?:\b(?:cancel(?:led|ed)?|vacate(?:d)?|withdrawn|previously|originally|formerly|was|postponed|adjourned|stricken|continued|dropped|mooted)\b|\boff(?:\s+the)?\s+calendar\b|\bwithout\s+date\b|\bcalled\s+off\b|\bno\s+longer\b)/i.test(
     withoutContinuanceDestination
   );
@@ -1722,27 +1830,27 @@ function dateHasDisqualifyingAttachment(
 }
 
 /**
- * Text fallback: keep a date only when it is the unique current target
- * of a positive scheduling form, with no attached qualifier. A lone
- * calendar date in the sentence is not enough.
+ * Text fallback: the whole statement must be a clean schedule clause.
+ * A lone calendar date is not enough. Extra guards still drop TBD,
+ * from/was/previously, vacated-before, and clause disqualifier words.
  */
 function pickCurrentCalendarDate(
   dates: CalendarDateMatch[],
   text: string
 ): CalendarDate | null {
-  const current = dates.filter(
-    (date) =>
-      isPositiveSchedulingTarget(text, date) &&
-      !dateHasDisqualifyingAttachment(text, date)
-  );
-  const unique = current.filter(
-    (date, index, all) =>
-      all.findIndex((other) => datesEqual(other, date)) === index
-  );
-  if (unique.length === 1) {
-    return unique[0];
+  const inferred = inferCleanScheduleDate(text);
+  if (!inferred) return null;
+  const match = dates.find((date) => datesEqual(date, inferred));
+  if (match && dateHasDisqualifyingAttachment(text, match)) {
+    return null;
   }
-  return null;
+  if (
+    match &&
+    !isPositiveSchedulingTarget(text, match)
+  ) {
+    return null;
+  }
+  return inferred;
 }
 
 function unknownImportantDate(): StatusClaim {
@@ -1775,9 +1883,11 @@ function importantDateClaim(
  * Structured data first: the latest SCHEDULE_STATUS_REPORTED event at or
  * before asOf, via getLatestEvent. If the object itself is a complete
  * valid calendar date, that date is SUPPORTED. Otherwise text is an
- * INFERRED fallback only when a date is the unique target of a
- * positive scheduling form (set for, scheduled for, due, by,
- * continued/moved/rescheduled to). Relative phrasing, bare "to",
+ * INFERRED fallback only when the whole statement is a clean schedule:
+ * plain subject, then set for / scheduled for / due / by / continued|
+ * moved|rescheduled to, then a date, then only optional time, place,
+ * and punctuation. Continuance "to" without a date is UNKNOWN and does
+ * not fall back to an earlier date. Relative phrasing, bare "to",
  * from/was/previously/cancel/vacate/TBD attachments, and ambiguity are
  * UNKNOWN. Numeric dates in text are US MM/DD/YYYY. Comparison with
  * asOf is by UTC calendar day.

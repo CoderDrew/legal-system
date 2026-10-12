@@ -5873,3 +5873,89 @@ test("important-date: postponed and related clause words disqualify set-for Oct 
     assert.notEqual(derived.value, "2026-10-15");
   }
 });
+
+test("important-date: extra clause text around set-for/continuance is UNKNOWN", () => {
+  const cases = [
+    "Hearing set for Oct 15, 2026 struck.",
+    "Hearing deferred, set for Oct 15, 2026",
+    "Hearing stayed, set for Oct 15, 2026",
+    "Hearing suspended, set for Oct 15, 2026",
+    "Hearing rescinded, set for Oct 15, 2026",
+    "Hearing on hold, set for Oct 15, 2026",
+    "Hearing removed from calendar, set for Oct 15, 2026",
+    "Hearing superseded, set for Oct 15, 2026",
+    "Hearing will not go forward, set for Oct 15, 2026",
+    "Hearing put off, set for Oct 15, 2026",
+    "Initially set for Oct 15, 2026",
+    "Hearing continued from 2026-10-15 to a later date",
+    "Hearing set for Oct 15, 2026. Moved to a new date.",
+    "Hearing set for Oct 15, 2026 rescheduled to a date TBA",
+  ];
+
+  for (const action of cases) {
+    const matterId = `test-matter-date-struct-${action.length}`;
+    const derived = deriveImportantDateSlot(
+      [
+        scheduleStatusEvent({
+          matterId,
+          eventId: `${matterId}-schedule`,
+          occurredAt: "2026-09-12T09:00:00Z",
+          sourceRecordedAt: "2026-09-12T09:00:00Z",
+          action,
+          object: "Hearing",
+        }),
+      ],
+      matterId,
+      IMPORTANT_DATE_AS_OF,
+    );
+    assert.equal(
+      derived.state,
+      "UNKNOWN",
+      `${JSON.stringify(action)} must be UNKNOWN, got ${derived.state} / ${derived.value}`,
+    );
+    assert.equal(derived.value, "Unknown");
+    assert.notEqual(derived.value, "October 15, 2026");
+    assert.notEqual(derived.value, "2026-10-15");
+  }
+});
+
+test("important-date: clean set-for with time and place is INFERRED", () => {
+  const matterId = "test-matter-date-time-place";
+  const derived = deriveImportantDateSlot(
+    [
+      scheduleStatusEvent({
+        matterId,
+        eventId: `${matterId}-schedule`,
+        occurredAt: "2026-09-12T09:00:00Z",
+        sourceRecordedAt: "2026-09-12T09:00:00Z",
+        action: "Hearing set for Oct 15, 2026 at 9:00 AM in Courtroom 3.",
+        object: "Hearing",
+      }),
+    ],
+    matterId,
+    IMPORTANT_DATE_AS_OF,
+  );
+  assert.equal(derived.state, "INFERRED");
+  assert.equal(derived.value, "October 15, 2026");
+});
+
+test("important-date: continued from/to keeps the destination date", () => {
+  const matterId = "test-matter-date-continued-from-to";
+  const derived = deriveImportantDateSlot(
+    [
+      scheduleStatusEvent({
+        matterId,
+        eventId: `${matterId}-schedule`,
+        occurredAt: "2026-09-12T09:00:00Z",
+        sourceRecordedAt: "2026-09-12T09:00:00Z",
+        action: "continued from 2026-10-15 to 2026-11-20",
+        object: "Hearing",
+      }),
+    ],
+    matterId,
+    IMPORTANT_DATE_AS_OF,
+  );
+  assert.equal(derived.state, "INFERRED");
+  assert.equal(derived.value, "November 20, 2026");
+  assert.notEqual(derived.value, "October 15, 2026");
+});
