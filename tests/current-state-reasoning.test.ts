@@ -6023,3 +6023,39 @@ test("important-date: two clean dates in one statement are UNKNOWN", () => {
   assert.notEqual(derived.value, "October 15, 2026");
   assert.notEqual(derived.value, "November 20, 2026");
 });
+
+test("important-date: place status words and ALL-CAPS are UNKNOWN", () => {
+  const cases = [
+    "Hearing set for 2026-10-15 in Denver CANCELLED",
+    "Hearing set for 2026-10-15 in Denver Postponed.",
+    "Hearing set for 2026-10-15 at Courthouse Vacated",
+    "Hearing set for 2026-10-15 in Denver Off Calendar",
+    "Hearing continued to 2026-11-20, later vacated",
+  ];
+
+  for (const action of cases) {
+    const matterId = `test-matter-date-place-status-${action.length}`;
+    const derived = deriveImportantDateSlot(
+      [
+        scheduleStatusEvent({
+          matterId,
+          eventId: `${matterId}-schedule`,
+          occurredAt: "2026-09-12T09:00:00Z",
+          sourceRecordedAt: "2026-09-12T09:00:00Z",
+          action,
+          object: "Hearing",
+        }),
+      ],
+      matterId,
+      IMPORTANT_DATE_AS_OF,
+    );
+    assert.equal(
+      derived.state,
+      "UNKNOWN",
+      `${JSON.stringify(action)} must be UNKNOWN, got ${derived.state} / ${derived.value}`,
+    );
+    assert.equal(derived.value, "Unknown");
+    assert.notEqual(derived.value, "October 15, 2026");
+    assert.notEqual(derived.value, "November 20, 2026");
+  }
+});

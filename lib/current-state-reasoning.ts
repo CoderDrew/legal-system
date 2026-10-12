@@ -1680,9 +1680,37 @@ function scheduleSubjectPattern(): string {
   return `(?:${head}${ofName})`;
 }
 
+function schedulePlaceWordPattern(): string {
+  const stems = [
+    "cancel",
+    "vacat",
+    "postpon",
+    "stay",
+    "stricken",
+    "struck",
+    "off",
+    "continu",
+    "tbd",
+    "tba",
+    "adjourn",
+    "defer",
+    "suspend",
+    "withdraw",
+    "drop",
+    "moot",
+    "hold",
+    "remov",
+  ]
+    .map(caseInsensitiveToken)
+    .join("|");
+  // Title case only: first letter upper, rest not ALL-CAPS.
+  return `(?!(?:${stems}))[A-Z][a-z]+(?:['-][A-Za-z]+)*`;
+}
+
 function schedulePlacePattern(): string {
   const room = `(?:(?:${["Courtroom", "Room", "Dept", "Department"].map(caseInsensitiveToken).join("|")})\\.?\\s+[A-Za-z0-9]+)`;
-  const proper = "[A-Z][A-Za-z'-]*(?:\\s+[A-Z][A-Za-z'-]*){0,2}";
+  const word = schedulePlaceWordPattern();
+  const proper = `${word}(?:\\s+${word})?`;
   return `(?:${room}|${proper})`;
 }
 
@@ -1719,6 +1747,7 @@ function hasUniqueScheduleResult(dates: CalendarDate[]): boolean {
     (date, index, all) =>
       all.findIndex((other) => datesEqual(other, date)) === index
   );
+  // Defensive: the whole-text template already yields at most one date.
   return unique.length === 1;
 }
 
@@ -1766,6 +1795,7 @@ function pickUniqueScheduleDate(
   matched: CalendarDate | null,
   targets: CalendarDate[]
 ): CalendarDate | null {
+  // Defensive: the whole-text template already yields at most one date.
   if (!hasUniqueScheduleResult(targets)) return null;
   return matched;
 }
