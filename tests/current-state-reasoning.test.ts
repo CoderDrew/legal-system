@@ -4907,3 +4907,41 @@ test("owner: first mentioned known name does not win a transfer", () => {
     "Outgoing name appears first; returning it means first-mentioned wins",
   );
 });
+
+test("owner: departure wording without a positive assignment is UNKNOWN", () => {
+  const phrasings = [
+    "Alex Thompson is no longer the responsible attorney.",
+    "Alex Thompson stepped down as responsible attorney.",
+    "Alex Thompson withdrew as counsel.",
+    "Alex Thompson left the firm.",
+    "Alex Thompson is the outgoing responsible attorney.",
+    "Prior responsible attorney: Alex Thompson.",
+    "Ex-attorney Alex Thompson.",
+  ];
+
+  for (const action of phrasings) {
+    const derived = deriveOwnerFromAction(
+      `test-matter-owner-departure-${action.length}`,
+      action,
+      "Responsible attorney",
+    );
+    assert.equal(
+      derived.state,
+      "UNKNOWN",
+      `${JSON.stringify(action)} must not treat a departure as an assignment`,
+    );
+    assert.equal(derived.value, "Unknown");
+    assert.notEqual(derived.value, "Alex Thompson");
+  }
+});
+
+test("owner: lone name with no assignment verb is UNKNOWN", () => {
+  const derived = deriveOwnerFromAction(
+    "test-matter-owner-lone-name",
+    "Discussed the file with Alex Thompson.",
+    "Responsible attorney",
+  );
+  assert.equal(derived.state, "UNKNOWN");
+  assert.equal(derived.value, "Unknown");
+  assert.notEqual(derived.value, "Alex Thompson");
+});

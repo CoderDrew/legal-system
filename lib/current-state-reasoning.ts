@@ -1291,25 +1291,27 @@ function mentionedFirmSideIdentities(
   );
 }
 
-function hasIncomingRolePhrase(action: string): boolean {
-  return (
-    /\breplaced\s+by\b/i.test(action) ||
-    /\bsucceeded\s+by\b/i.test(action) ||
-    /\b(?:reassigned|transferred|assigned|handed(?:\s+off)?)\s+to\b/i.test(
-      action
-    ) ||
-    (/\bfrom\b/i.test(action) && /\bto\b/i.test(action))
-  );
-}
-
 /**
- * True when the name is in an incoming-owner role: replaced by Y,
- * succeeded by Y, assigned/transferred to Y, or from … to Y.
+ * True when the name sits in a positive assignment construction — the
+ * only text path that can produce an owner. Mentioning a name next to a
+ * role label, or in departure wording, is not enough.
  */
-function isIncomingOwnerMention(action: string, name: string): boolean {
+function isPositiveAssignmentMention(action: string, name: string): boolean {
   const escaped = boundPersonName(name);
   if (!escaped) return false;
   return (
+    new RegExp(
+      `\\b(?:recorded|assigned|named|designated|appointed)\\s+${escaped}\\s+as\\s+(?:the\\s+)?(?:responsible\\s+attorney|owner|counsel(?:\\s+of\\s+record)?)\\b`,
+      "i"
+    ).test(action) ||
+    new RegExp(
+      `\\b${escaped}\\b\\s+(?:took\\s+over|has\\s+taken\\s+over|is\\s+taking\\s+over)\\b`,
+      "i"
+    ).test(action) ||
+    new RegExp(
+      `\\b${escaped}\\b\\s+(?:will\\s+handle|is\\s+handling|handles)\\b`,
+      "i"
+    ).test(action) ||
     new RegExp(`\\breplaced\\s+by\\s+${escaped}\\b`, "i").test(action) ||
     new RegExp(`\\bsucceeded\\s+by\\s+${escaped}\\b`, "i").test(action) ||
     new RegExp(
@@ -1321,73 +1323,23 @@ function isIncomingOwnerMention(action: string, name: string): boolean {
 }
 
 /**
- * True when the name is in an outgoing-owner role: replacing X,
- * X was replaced, from X, removed X, former X, X as the former.
- * Sentence-level "removed" / "former" also mark mentioned names as
- * outgoing unless they already have an incoming role.
- */
-function isOutgoingOwnerMention(action: string, name: string): boolean {
-  const escaped = boundPersonName(name);
-  if (!escaped || !actionMentionsPerson(action, name)) return false;
-  if (isIncomingOwnerMention(action, name)) return false;
-  return (
-    new RegExp(`\\breplacing\\s+${escaped}\\b`, "i").test(action) ||
-    new RegExp(
-      `\\b${escaped}\\b\\s+(?:was|were|got|is|has\\s+been)\\s+replaced\\b`,
-      "i"
-    ).test(action) ||
-    new RegExp(`\\bfrom\\s+${escaped}\\b`, "i").test(action) ||
-    new RegExp(`\\bremov(?:ed|ing)\\s+${escaped}\\b`, "i").test(action) ||
-    new RegExp(
-      `\\b(?:former(?:ly)?|previously)\\s+${escaped}\\b`,
-      "i"
-    ).test(action) ||
-    new RegExp(`\\b${escaped}\\b[\\s\\S]*?\\bas\\s+the\\s+former\\b`, "i").test(
-      action
-    ) ||
-    (/\bremov(?:ed|ing)\b/i.test(action) &&
-      actionMentionsPerson(action, name)) ||
-    (/\bformer(?:ly)?\b/i.test(action) && actionMentionsPerson(action, name))
-  );
-}
-
-/**
- * Text fallback: match known firm-side identities in action text.
- * Incoming-owner roles win over outgoing-owner roles. A transfer or
- * removal with no known incoming owner is UNKNOWN — the outgoing name
- * is not the current owner.
+ * Text fallback: a known firm-side identity becomes owner only when the
+ * action is a positive assignment of that person. A lone name, a role
+ * label, or departure wording without an incoming assignment is not
+ * enough.
  */
 function inferOwnerFromActionText(
   action: string,
   matter: SyntheticMatter,
   requestingUser: SyntheticUser
 ): string | null {
-  const mentioned = mentionedFirmSideIdentities(
+  const assigned = mentionedFirmSideIdentities(
     action,
     matter,
     requestingUser
-  );
-  const incoming = mentioned.filter((name) =>
-    isIncomingOwnerMention(action, name)
-  );
-  const outgoing = mentioned.filter((name) =>
-    isOutgoingOwnerMention(action, name)
-  );
-  const unmarked = mentioned.filter(
-    (name) => !incoming.includes(name) && !outgoing.includes(name)
-  );
-
-  if (incoming.length === 1) {
-    return incoming[0];
-  }
-  if (incoming.length > 1) {
-    return null;
-  }
-  if (hasIncomingRolePhrase(action)) {
-    return null;
-  }
-  if (unmarked.length === 1) {
-    return unmarked[0];
+  ).filter((name) => isPositiveAssignmentMention(action, name));
+  if (assigned.length === 1) {
+    return assigned[0];
   }
   return null;
 }
@@ -1414,14 +1366,15 @@ function ownerClaim(
  * identities (responsible attorney or requesting user). A role label
  * such as "Responsible attorney" is not the person. Email local-part
  * matching is used when the source artifact identifies a known person.
- * Text is an INFERRED fallback that only matches those known identities.
- * Incoming-owner roles (replaced by, to) win; outgoing-owner roles
- * (replacing, from, removed, former) do not. UNKNOWN when the evidence
- * does not support an owner.
+ * Text is an INFERRED fallback only when the action is a positive
+ * assignment of a known firm-side identity (recorded/assigned/named as
+ * responsible attorney, took over, replaced by, transferred to, and
+ * equivalent constructions). A lone name, including one paired with a
+ * role label, is UNKNOWN.
  *
- * Smith v. Acme is SUPPORTED because the event action names Alex
- * Thompson, a known firm-side identity, on a responsibility recording —
- * not because the role object is mapped onto matter.responsibleAttorney.
+ * Smith v. Acme is SUPPORTED because its event action is
+ * "Recorded Alex Thompson as the responsible attorney." — a positive
+ * assignment of a known firm-side identity, not a special case.
  */
 export function deriveOwnerSlot(
   events: OperationalEvent[],
