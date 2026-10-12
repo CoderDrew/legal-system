@@ -194,9 +194,30 @@ function artifactAddresses(artifact: EligibleEvidenceItem): string[] {
 }
 
 /**
+ * Consumer mailbox domains. Sharing one of these with opposing counsel
+ * must not make them look like our side.
+ */
+const CONSUMER_MAILBOX_DOMAINS = new Set([
+  "gmail.com",
+  "googlemail.com",
+  "outlook.com",
+  "hotmail.com",
+  "live.com",
+  "msn.com",
+  "yahoo.com",
+  "ymail.com",
+  "icloud.com",
+  "me.com",
+  "mac.com",
+  "aol.com",
+  "proton.me",
+  "protonmail.com",
+]);
+
+/**
  * Firm domains taken from emails of the responsible attorney or requesting user.
  * Example: alex.thompson@lawfirm.example and rachel.morgan@lawfirm.example
- * both yield lawfirm.example.
+ * both yield lawfirm.example. Consumer webmail domains are ignored.
  */
 function firmDomainsFromStructuredIdentity(
   matter: SyntheticMatter,
@@ -214,7 +235,7 @@ function firmDomainsFromStructuredIdentity(
         )
       ) {
         const domain = address.toLowerCase().split("@")[1];
-        if (domain) {
+        if (domain && !CONSUMER_MAILBOX_DOMAINS.has(domain)) {
           domains.add(domain);
         }
       }
@@ -356,12 +377,31 @@ function collectOpenWaitingEvents(
 
 const SIX_MONTHS_MS = 180 * 24 * 60 * 60 * 1000;
 
+/**
+ * Parse the explicit asOf cutoff. Empty or invalid values must not be
+ * treated as a valid timestamp — Date.parse on those yields NaN, and
+ * `NaN - approvalTime >= SIX_MONTHS_MS` is false, which would silently
+ * mean "never stale".
+ */
+function parseAsOfTime(asOf: string): number | null {
+  if (typeof asOf !== "string") {
+    return null;
+  }
+  const trimmed = asOf.trim();
+  if (trimmed === "") {
+    return null;
+  }
+  const time = Date.parse(trimmed);
+  return Number.isFinite(time) ? time : null;
+}
+
 function isClosedOrSettledStatusEvent(event: OperationalEvent): boolean {
   if (event.eventType !== "MATTER_STATUS_RECORDED") {
     return false;
   }
   const text = `${event.action} ${event.object ?? ""}`.toLowerCase();
-  return /\bsettled\b/.test(text) || /\bclosed\b/.test(text);
+  const withoutNegation = text.replace(/\bnot\s+(settled|closed)\b/g, "");
+  return /\bsettled\b/.test(withoutNegation) || /\bclosed\b/.test(withoutNegation);
 }
 
 /**
@@ -393,7 +433,10 @@ function isApprovalStaleForNextAction(
     }
   }
 
-  const asOfTime = new Date(asOf).getTime();
+  const asOfTime = parseAsOfTime(asOf);
+  if (asOfTime === null) {
+    return true;
+  }
   return asOfTime - approvalTime >= SIX_MONTHS_MS;
 }
 
@@ -828,9 +871,12 @@ export function deriveCurrentStatusSlot(
         return current.eventId > latest.eventId ? current : latest;
       });
 
-      // Derive status from the approval action and document context
+      // Derive status from the approval action and document context.
+      // Match against a lowercased copy; keep the original object casing
+      // in the emitted status, the same way next-action does.
       const approvalAction = latestApproval.action.toLowerCase();
-      const docObject = (latestDoc.object || latestApproval.object || "document").toLowerCase();
+      const rawObject = latestDoc.object || latestApproval.object || "document";
+      const docObject = rawObject.toLowerCase();
       
       // Extract the approval target from the action
       // Priority: review > client approval > attorney approval > approval > decision
@@ -888,20 +934,19 @@ export function deriveCurrentStatusSlot(
       // Detect if the document is about revisions/changes
       if (docObject.includes("revised") || docObject.includes("revision")) {
         // Extract the base subject (e.g., "settlement" from "revised settlement language")
-        const subjectMatch = docObject.match(/revised?\s+(\w+)/i);
+        const subjectMatch = rawObject.match(/revised?\s+(\S+)/i);
         const subject = subjectMatch ? subjectMatch[1] : "document";
         statusText = `${subject.charAt(0).toUpperCase() + subject.slice(1)} revisions are awaiting ${approvalTarget}.`;
       } else if (docObject.includes("draft")) {
-        const subjectMatch = docObject.match(/draft\s+(\w+)/i);
+        const subjectMatch = rawObject.match(/draft\s+(\S+)/i);
         const subject = subjectMatch ? subjectMatch[1] : "document";
         statusText = `Draft ${subject} is awaiting ${approvalTarget}.`;
       } else if (docObject.includes("proposed")) {
-        const subjectMatch = docObject.match(/proposed\s+(\w+)/i);
+        const subjectMatch = rawObject.match(/proposed\s+(\S+)/i);
         const subject = subjectMatch ? subjectMatch[1] : "document";
         statusText = `Proposed ${subject} is awaiting ${approvalTarget}.`;
       } else {
-        // Generic: use the object directly
-        statusText = `${docObject.charAt(0).toUpperCase() + docObject.slice(1)} awaiting ${approvalTarget}.`;
+        statusText = `${rawObject} awaiting ${approvalTarget}.`;
       }
 
       return {
@@ -1036,6 +1081,10 @@ export function deriveNextActionSlot(
   requestingUser: SyntheticUser,
   asOf: string,
 ): StatusClaim {
+  if (parseAsOfTime(asOf) === null) {
+    return unknownNextAction();
+  }
+
   const allMatterEvents = events.filter((event) => event.matterId === matterId);
   const statusEvents = allMatterEvents.filter(
     (event) => event.eventType === "MATTER_STATUS_RECORDED"
@@ -1136,4 +1185,191 @@ export function deriveNextActionSlot(
   }
 
   return unknownNextAction();
+}
+
+const ATTORNEY_OWNER_ROLE_LABELS = new Set([
+  "attorney",
+  "our attorney",
+  "responsible attorney",
+  "counsel of record",
+  "owner",
+  "matter owner",
+  "assigned attorney",
+]);
+
+function unknownOwner(): StatusClaim {
+  return {
+    id: "owner",
+    label: "Owner",
+    value: "Unknown",
+    state: "UNKNOWN",
+    evidenceIds: [],
+  };
+}
+
+function isExcludedOwnerLabel(label: string, matter: SyntheticMatter): boolean {
+  const normalized = normalizedActorLabel(label);
+  return (
+    CLIENT_ROLE_LABELS.has(normalized) ||
+    actorEqualsName(label, matter.client) ||
+    COURT_ROLE_LABELS.has(normalized) ||
+    normalized === "opposing counsel"
+  );
+}
+
+/**
+ * Resolve a structured actor/object label to a named own-side person.
+ * Role labels that uniquely identify the responsible attorney map to
+ * matter.responsibleAttorney. Personal names keep their original casing
+ * unless they match a known identity, in which case the canonical name
+ * is used. Client, court, and opposing-counsel labels are not owners.
+ */
+function resolveNamedOwnSidePerson(
+  label: string | null,
+  matter: SyntheticMatter,
+  requestingUser: SyntheticUser
+): string | null {
+  if (!label) return null;
+  const normalized = normalizedActorLabel(label);
+  if (!normalized) return null;
+  if (isExcludedOwnerLabel(label, matter)) return null;
+
+  if (actorEqualsName(label, matter.responsibleAttorney)) {
+    return matter.responsibleAttorney;
+  }
+  if (actorEqualsName(label, requestingUser.name)) {
+    return requestingUser.name;
+  }
+
+  if (ATTORNEY_OWNER_ROLE_LABELS.has(normalized)) {
+    return matter.responsibleAttorney.trim() ? matter.responsibleAttorney : null;
+  }
+
+  if (OWN_SIDE_ROLE_LABELS.has(normalized)) {
+    return null;
+  }
+
+  return label;
+}
+
+function resolveOwnerFromArtifact(
+  artifact: EligibleEvidenceItem | undefined,
+  matter: SyntheticMatter,
+  requestingUser: SyntheticUser
+): string | null {
+  if (!artifact?.from) return null;
+  if (isEmailFromPerson(artifact, matter.client)) {
+    return null;
+  }
+  if (isEmailFromPerson(artifact, matter.responsibleAttorney)) {
+    return matter.responsibleAttorney;
+  }
+  if (isEmailFromPerson(artifact, requestingUser.name)) {
+    return requestingUser.name;
+  }
+  return null;
+}
+
+function actionMentionsPerson(action: string, personName: string): boolean {
+  const trimmed = personName.trim();
+  if (!trimmed) return false;
+  const escaped = trimmed.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`\\b${escaped}\\b`, "i").test(action);
+}
+
+/**
+ * Text fallback: match known own-side identities in action text.
+ * Does not extract arbitrary names from phrasing.
+ */
+function inferOwnerFromActionText(
+  action: string,
+  matter: SyntheticMatter,
+  requestingUser: SyntheticUser
+): string | null {
+  const candidates = [matter.responsibleAttorney, requestingUser.name]
+    .map((name) => name.trim())
+    .filter((name) => name.length > 0 && !actorEqualsName(name, matter.client))
+    .sort((left, right) => right.length - left.length);
+
+  for (const name of candidates) {
+    if (actionMentionsPerson(action, name)) {
+      return name;
+    }
+  }
+  return null;
+}
+
+/**
+ * Derives the owner slot from operational events.
+ *
+ * Structured data first: the latest RESPONSIBILITY_RECORDED event at or
+ * before asOf. Actor and object are resolved through own-side identity
+ * (responsible attorney, requesting user, attorney role labels). Email
+ * local-part matching is used when the source artifact identifies a
+ * known person. Text is an INFERRED fallback that only matches those
+ * known identities. UNKNOWN when the evidence does not support an owner.
+ *
+ * Deterministic: uses event timestamps (compareEventsByTime / getLatestEvent),
+ * structured identity helpers, and an explicit asOf. No fixture wording.
+ */
+export function deriveOwnerSlot(
+  events: OperationalEvent[],
+  matterId: string,
+  matter: SyntheticMatter,
+  eligibleEvidence: EligibleEvidenceItem[],
+  requestingUser: SyntheticUser,
+  asOf: string
+): StatusClaim {
+  const asOfTime = parseAsOfTime(asOf);
+  if (asOfTime === null) {
+    return unknownOwner();
+  }
+
+  const responsibilityEvents = events.filter(
+    (event) =>
+      event.matterId === matterId &&
+      event.eventType === "RESPONSIBILITY_RECORDED" &&
+      getEventTimestamp(event) <= asOfTime
+  );
+
+  if (responsibilityEvents.length === 0) {
+    return unknownOwner();
+  }
+
+  const latest = getLatestEvent(responsibilityEvents);
+  const artifact = eligibleEvidence.find(
+    (item) => item.id === latest.provenance.sourceArtifactId
+  );
+
+  const structuredOwner =
+    resolveNamedOwnSidePerson(latest.actor, matter, requestingUser) ??
+    resolveNamedOwnSidePerson(latest.object, matter, requestingUser) ??
+    resolveOwnerFromArtifact(artifact, matter, requestingUser);
+
+  if (structuredOwner) {
+    return {
+      id: "owner",
+      label: "Owner",
+      value: structuredOwner,
+      state: "SUPPORTED",
+      evidenceIds: [latest.provenance.sourceArtifactId],
+    };
+  }
+
+  const inferredOwner = inferOwnerFromActionText(
+    latest.action,
+    matter,
+    requestingUser
+  );
+  if (inferredOwner) {
+    return {
+      id: "owner",
+      label: "Owner",
+      value: inferredOwner,
+      state: "INFERRED",
+      evidenceIds: [latest.provenance.sourceArtifactId],
+    };
+  }
+
+  return unknownOwner();
 }

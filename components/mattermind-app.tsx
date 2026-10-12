@@ -10,7 +10,7 @@ import {
 import { syntheticCurrentStateGroundTruth } from "@/data/synthetic-current-state";
 import { buildEligibleEvidenceSet } from "@/lib/evidence-processing";
 import { extractOperationalEvents } from "@/lib/operational-events";
-import { deriveCurrentStatusSlot, deriveLastImportantEventSlot, deriveWaitingOnSlot, deriveNextActionSlot } from "@/lib/current-state-reasoning";
+import { deriveCurrentStatusSlot, deriveLastImportantEventSlot, deriveWaitingOnSlot, deriveNextActionSlot, deriveOwnerSlot } from "@/lib/current-state-reasoning";
 import { EvidencePanel } from "@/components/evidence-panel";
 import { StatusBrief } from "@/components/status-brief";
 import { ArrowRightIcon, DocumentIcon, LockIcon } from "@/components/icons";
@@ -56,6 +56,15 @@ const derivedNextActionSlot = deriveNextActionSlot(
   syntheticCurrentStateGroundTruth.asOf,
 );
 
+const derivedOwnerSlot = deriveOwnerSlot(
+  operationalEvents,
+  syntheticMatterBrief.matter.id,
+  syntheticMatterBrief.matter,
+  evidenceProcessing.eligibleEvidence,
+  syntheticRequestingUser,
+  syntheticCurrentStateGroundTruth.asOf,
+);
+
 // Build the brief with derived slots and predefined other slots
 const matterBrief = {
   ...syntheticMatterBrief,
@@ -64,6 +73,7 @@ const matterBrief = {
     if (claim.id === "last-important-event") return derivedLastImportantEventSlot;
     if (claim.id === "waiting-on") return derivedWaitingOnSlot;
     if (claim.id === "next-action") return derivedNextActionSlot;
+    if (claim.id === "owner") return derivedOwnerSlot;
     return claim;
   }),
 };
@@ -194,7 +204,7 @@ export function MatterMindApp() {
                 </h2>
                 <p className="mt-2 text-sm leading-6 text-slate-600">
                   This increment derives the current-status, last-important-event, waiting-on,
-                  and next-action slots from operational events. The other 3 slots remain predefined. Show
+                  next-action, and owner slots from operational events. The other 2 slots remain predefined. Show
                   the brief to review claims, evidence states, and source provenance.
                 </p>
               </div>
