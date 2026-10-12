@@ -6070,6 +6070,9 @@ test("important-date: room token without a digit or extra place word is UNKNOWN"
     "Hearing set for 2026-10-15 in Denver Pending",
     "Hearing set for 2026-10-15 in Denver Abated",
     "Hearing set for 2026-10-15 in New York",
+    "Hearing set for 2026-10-15 in Room 4-Cancelled",
+    "Hearing set for 2026-10-15 in Room 4CANCELLED",
+    "Hearing set for 2026-10-15 in Room 2026-11-20",
   ];
 
   for (const action of cases) {

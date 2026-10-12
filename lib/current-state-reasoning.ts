@@ -1708,7 +1708,7 @@ function schedulePlaceWordPattern(): string {
 }
 
 function scheduleRoomNumberPattern(): string {
-  return "(?:[0-9][0-9A-Za-z-]*|[A-Za-z]?[0-9]+[A-Za-z]?)";
+  return "[A-Za-z]?[0-9]+[A-Za-z]?";
 }
 
 function schedulePlacePattern(): string {
