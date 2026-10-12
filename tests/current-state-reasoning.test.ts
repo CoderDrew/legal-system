@@ -10,7 +10,7 @@ import {
 import { syntheticCurrentStateGroundTruth } from "@/data/synthetic-current-state";
 import { buildEligibleEvidenceSet } from "@/lib/evidence-processing";
 import { extractOperationalEvents } from "@/lib/operational-events";
-import { deriveCurrentStatusSlot, deriveLastImportantEventSlot, deriveWaitingOnSlot, deriveNextActionSlot, deriveOwnerSlot } from "@/lib/current-state-reasoning";
+import { deriveCurrentStatusSlot, deriveLastImportantEventSlot, deriveWaitingOnSlot, deriveNextActionSlot, deriveOwnerSlot, deriveImportantDateSlot } from "@/lib/current-state-reasoning";
 
 const evidenceProcessing = buildEligibleEvidenceSet({
   user: syntheticRequestingUser,
@@ -4944,4 +4944,550 @@ test("owner: lone name with no assignment verb is UNKNOWN", () => {
   assert.equal(derived.state, "UNKNOWN");
   assert.equal(derived.value, "Unknown");
   assert.notEqual(derived.value, "Alex Thompson");
+});
+
+test("owner: originally assigned name is not the current owner", () => {
+  const derived = deriveOwnerFromAction(
+    "test-matter-owner-originally-assigned",
+    "Originally assigned to Alex Thompson.",
+    "Responsible attorney",
+  );
+  assert.equal(derived.state, "UNKNOWN");
+  assert.equal(derived.value, "Unknown");
+  assert.notEqual(derived.value, "Alex Thompson");
+});
+
+test("owner: previously assigned then unassigned is UNKNOWN", () => {
+  const derived = deriveOwnerFromAction(
+    "test-matter-owner-previously-unassigned",
+    "Previously assigned to Alex Thompson; now unassigned.",
+    "Responsible attorney",
+  );
+  assert.equal(derived.state, "UNKNOWN");
+  assert.equal(derived.value, "Unknown");
+  assert.notEqual(derived.value, "Alex Thompson");
+});
+
+test("owner: took over then withdrew is UNKNOWN", () => {
+  const derived = deriveOwnerFromAction(
+    "test-matter-owner-took-over-withdrew",
+    "Alex Thompson took over, then withdrew.",
+    "Responsible attorney",
+  );
+  assert.equal(derived.state, "UNKNOWN");
+  assert.equal(derived.value, "Unknown");
+  assert.notEqual(derived.value, "Alex Thompson");
+});
+
+test("owner: reversed assignment still yields a named incoming owner", () => {
+  const derived = deriveOwnerFromAction(
+    "test-matter-owner-reversed-incoming",
+    "Originally assigned to Alex Thompson; now assigned to Rachel Morgan.",
+    "Responsible attorney",
+  );
+  assert.equal(derived.value, "Rachel Morgan");
+  assert.notEqual(derived.value, "Alex Thompson");
+  assert.notEqual(derived.state, "UNKNOWN");
+});
+
+test("owner: exactly one assigned name is required", () => {
+  const derived = deriveOwnerFromAction(
+    "test-matter-owner-two-assigned-names",
+    "Assigned to Alex Thompson and Rachel Morgan will handle the file.",
+    "Responsible attorney",
+  );
+  assert.equal(derived.state, "UNKNOWN");
+  assert.equal(derived.value, "Unknown");
+  assert.notEqual(derived.value, "Alex Thompson");
+  assert.notEqual(derived.value, "Rachel Morgan");
+});
+
+// ============================================================================
+// IMPORTANT-DATE SLOT TESTS
+// ============================================================================
+
+function makeImportantDateEvent(
+  event: Omit<OperationalEvent, "extractionMethod">,
+): OperationalEvent {
+  return {
+    ...event,
+    extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+  };
+}
+
+function scheduleStatusEvent(args: {
+  matterId: string;
+  eventId: string;
+  occurredAt: string | null;
+  sourceRecordedAt: string;
+  action: string;
+  object: string | null;
+  artifactId?: string;
+}): OperationalEvent {
+  return makeImportantDateEvent({
+    eventId: args.eventId,
+    matterId: args.matterId,
+    eventType: "SCHEDULE_STATUS_REPORTED",
+    occurredAt: args.occurredAt,
+    actor: "Rachel Morgan",
+    action: args.action,
+    object: args.object,
+    provenance: {
+      sourceArtifactId: args.artifactId ?? `${args.matterId}-artifact-schedule`,
+      sourceSystem: "Outlook",
+      sourceRecordedAt: args.sourceRecordedAt,
+      associationMethod: "EXPLICIT_MATTER_ID",
+      evidenceExcerpt: "schedule",
+    },
+  });
+}
+
+const IMPORTANT_DATE_AS_OF = "2026-09-17T23:59:59Z";
+
+test("derived important-date slot matches ground-truth expectation", () => {
+  const derived = deriveImportantDateSlot(
+    extractedEvents,
+    syntheticMatters[0].id,
+    syntheticCurrentStateGroundTruth.asOf,
+  );
+  const expectation = syntheticCurrentStateGroundTruth.expectations.find(
+    (exp) => exp.slotId === "important-date",
+  );
+
+  assert.ok(expectation, "Ground truth has important-date expectation");
+  assert.equal(derived.id, "important-date", "Derived slot has correct ID");
+  assert.equal(
+    derived.state,
+    expectation.expectedState,
+    "Derived state matches ground truth",
+  );
+
+  // Ground truth stores null for UNKNOWN; the claim displays the fixed Unknown text.
+  const expectedClaimValue =
+    expectation.expectedState === "UNKNOWN" && expectation.expectedValue === null
+      ? "Unknown"
+      : expectation.expectedValue;
+  assert.equal(
+    derived.value,
+    expectedClaimValue,
+    "Derived value matches ground truth display mapping",
+  );
+  assert.equal(
+    expectation.expectedValue,
+    null,
+    "Fixture data value remains null; UNKNOWN is not a hard-coded date",
+  );
+  assert.deepEqual(derived.evidenceIds, []);
+});
+
+test("important-date: fixture UNKNOWN is from missing calendar date, not event time", () => {
+  const schedule = extractedEvents.find(
+    (event) => event.eventType === "SCHEDULE_STATUS_REPORTED",
+  );
+  assert.ok(schedule, "Smith fixture includes a schedule event");
+
+  const derived = deriveImportantDateSlot(
+    extractedEvents,
+    syntheticMatters[0].id,
+    syntheticCurrentStateGroundTruth.asOf,
+  );
+
+  assert.equal(derived.state, "UNKNOWN");
+  assert.equal(derived.value, "Unknown");
+  assert.notEqual(
+    derived.value,
+    "September 10, 2026",
+    "sourceRecordedAt is not the important date",
+  );
+  assert.notEqual(
+    derived.state,
+    "SUPPORTED",
+    "Relative phrasing must not become a SUPPORTED date",
+  );
+});
+
+test("important-date: adding an explicit structured date changes the fixture result", () => {
+  const derived = deriveImportantDateSlot(
+    [
+      ...extractedEvents,
+      scheduleStatusEvent({
+        matterId: syntheticMatters[0].id,
+        eventId: "email-0142-scheduling:explicit-date",
+        occurredAt: "2026-09-17T12:00:00Z",
+        sourceRecordedAt: "2026-09-17T12:00:00Z",
+        action: "Recorded the hearing date on the matter calendar.",
+        object: "2026-10-15",
+        artifactId: "email-0142-explicit-date",
+      }),
+    ],
+    syntheticMatters[0].id,
+    syntheticCurrentStateGroundTruth.asOf,
+  );
+
+  assert.equal(derived.state, "SUPPORTED");
+  assert.equal(derived.value, "October 15, 2026");
+  assert.deepEqual(derived.evidenceIds, ["email-0142-explicit-date"]);
+});
+
+test("important-date: no schedule events returns UNKNOWN", () => {
+  const matterId = "test-matter-date-none";
+  const derived = deriveImportantDateSlot(
+    [
+      makeImportantDateEvent({
+        eventId: `${matterId}-doc`,
+        matterId,
+        eventType: "DOCUMENT_SENT",
+        occurredAt: "2026-09-16T10:00:00Z",
+        actor: "Opposing counsel",
+        action: "Sent a letter dated October 15, 2026.",
+        object: "Letter",
+        provenance: {
+          sourceArtifactId: `${matterId}-artifact-doc`,
+          sourceSystem: "Outlook",
+          sourceRecordedAt: "2026-09-16T10:00:00Z",
+          associationMethod: "EXPLICIT_MATTER_ID",
+          evidenceExcerpt: "letter",
+        },
+      }),
+    ],
+    matterId,
+    IMPORTANT_DATE_AS_OF,
+  );
+
+  assert.equal(derived.state, "UNKNOWN");
+  assert.equal(derived.value, "Unknown");
+  assert.equal(derived.evidenceIds.length, 0);
+});
+
+test("important-date: structured object date is SUPPORTED", () => {
+  const matterId = "test-matter-date-structured";
+  const derived = deriveImportantDateSlot(
+    [
+      scheduleStatusEvent({
+        matterId,
+        eventId: `${matterId}-schedule`,
+        occurredAt: "2026-09-12T09:00:00Z",
+        sourceRecordedAt: "2026-09-12T09:00:00Z",
+        action: "Recorded the conference date.",
+        object: "2026-10-15",
+      }),
+    ],
+    matterId,
+    IMPORTANT_DATE_AS_OF,
+  );
+
+  assert.equal(derived.state, "SUPPORTED");
+  assert.equal(derived.value, "October 15, 2026");
+  assert.deepEqual(derived.evidenceIds, [`${matterId}-artifact-schedule`]);
+});
+
+test("important-date: text calendar date is INFERRED", () => {
+  const matterId = "test-matter-date-text";
+  const derived = deriveImportantDateSlot(
+    [
+      scheduleStatusEvent({
+        matterId,
+        eventId: `${matterId}-schedule`,
+        occurredAt: "2026-09-12T09:00:00Z",
+        sourceRecordedAt: "2026-09-12T09:00:00Z",
+        action: "Reported that the conference is scheduled for October 15, 2026.",
+        object: "Settlement conference",
+      }),
+    ],
+    matterId,
+    IMPORTANT_DATE_AS_OF,
+  );
+
+  assert.equal(derived.state, "INFERRED");
+  assert.equal(derived.value, "October 15, 2026");
+});
+
+test("important-date: relative phrasing without a calendar date is UNKNOWN", () => {
+  const matterId = "test-matter-date-relative";
+  const phrasings = [
+    "Reported that the conference remains scheduled for next week.",
+    "Reported that the hearing is due in two weeks.",
+    "Reported that the conference is tomorrow.",
+    "Reported that the settlement conference remained scheduled for next month.",
+  ];
+
+  for (const action of phrasings) {
+    const derived = deriveImportantDateSlot(
+      [
+        scheduleStatusEvent({
+          matterId,
+          eventId: `${matterId}-${action.length}`,
+          occurredAt: "2026-09-12T09:00:00Z",
+          sourceRecordedAt: "2026-09-12T09:00:00Z",
+          action,
+          object: "Hearing",
+        }),
+      ],
+      matterId,
+      IMPORTANT_DATE_AS_OF,
+    );
+
+    assert.equal(
+      derived.state,
+      "UNKNOWN",
+      `${JSON.stringify(action)} must not invent a calendar date`,
+    );
+    assert.equal(derived.value, "Unknown");
+    assert.equal(derived.evidenceIds.length, 0);
+  }
+});
+
+test("important-date: date before asOf is no longer current", () => {
+  const matterId = "test-matter-date-passed";
+  const derived = deriveImportantDateSlot(
+    [
+      scheduleStatusEvent({
+        matterId,
+        eventId: `${matterId}-schedule`,
+        occurredAt: "2026-08-01T09:00:00Z",
+        sourceRecordedAt: "2026-08-01T09:00:00Z",
+        action: "Recorded the response date.",
+        object: "2026-09-10",
+      }),
+    ],
+    matterId,
+    IMPORTANT_DATE_AS_OF,
+  );
+
+  assert.equal(derived.state, "UNKNOWN");
+  assert.equal(derived.value, "Unknown");
+  assert.notEqual(derived.value, "September 10, 2026");
+});
+
+test("important-date: date on asOf day remains current", () => {
+  const matterId = "test-matter-date-same-day";
+  const derived = deriveImportantDateSlot(
+    [
+      scheduleStatusEvent({
+        matterId,
+        eventId: `${matterId}-schedule`,
+        occurredAt: "2026-09-10T09:00:00Z",
+        sourceRecordedAt: "2026-09-10T09:00:00Z",
+        action: "Recorded the filing date.",
+        object: "2026-09-17",
+      }),
+    ],
+    matterId,
+    IMPORTANT_DATE_AS_OF,
+  );
+
+  assert.equal(derived.state, "SUPPORTED");
+  assert.equal(derived.value, "September 17, 2026");
+});
+
+test("important-date: later schedule event supersedes an earlier date", () => {
+  const matterId = "test-matter-date-supersede";
+  const derived = deriveImportantDateSlot(
+    [
+      scheduleStatusEvent({
+        matterId,
+        eventId: `${matterId}-earlier`,
+        occurredAt: "2026-08-01T09:00:00Z",
+        sourceRecordedAt: "2026-08-01T09:00:00Z",
+        action: "Recorded the original hearing date.",
+        object: "2026-10-01",
+        artifactId: `${matterId}-artifact-earlier`,
+      }),
+      scheduleStatusEvent({
+        matterId,
+        eventId: `${matterId}-later`,
+        occurredAt: "2026-09-10T09:00:00Z",
+        sourceRecordedAt: "2026-09-10T09:00:00Z",
+        action: "Recorded the continued hearing date.",
+        object: "2026-10-15",
+        artifactId: `${matterId}-artifact-later`,
+      }),
+    ],
+    matterId,
+    IMPORTANT_DATE_AS_OF,
+  );
+
+  assert.equal(derived.state, "SUPPORTED");
+  assert.equal(derived.value, "October 15, 2026");
+  assert.deepEqual(derived.evidenceIds, [`${matterId}-artifact-later`]);
+});
+
+test("important-date: continuance in one event keeps the destination date", () => {
+  const matterId = "test-matter-date-continuance";
+  const derived = deriveImportantDateSlot(
+    [
+      scheduleStatusEvent({
+        matterId,
+        eventId: `${matterId}-schedule`,
+        occurredAt: "2026-09-12T09:00:00Z",
+        sourceRecordedAt: "2026-09-12T09:00:00Z",
+        action:
+          "Reported that the hearing was continued from October 1, 2026 to October 15, 2026.",
+        object: "Hearing",
+      }),
+    ],
+    matterId,
+    IMPORTANT_DATE_AS_OF,
+  );
+
+  assert.equal(derived.state, "INFERRED");
+  assert.equal(derived.value, "October 15, 2026");
+  assert.notEqual(derived.value, "October 1, 2026");
+});
+
+test("important-date: two undirected dates are UNKNOWN", () => {
+  const matterId = "test-matter-date-ambiguous";
+  const derived = deriveImportantDateSlot(
+    [
+      scheduleStatusEvent({
+        matterId,
+        eventId: `${matterId}-schedule`,
+        occurredAt: "2026-09-12T09:00:00Z",
+        sourceRecordedAt: "2026-09-12T09:00:00Z",
+        action:
+          "Mentioned October 1, 2026 and October 15, 2026 without saying which applies.",
+        object: "Hearing",
+      }),
+    ],
+    matterId,
+    IMPORTANT_DATE_AS_OF,
+  );
+
+  assert.equal(derived.state, "UNKNOWN");
+  assert.equal(derived.value, "Unknown");
+});
+
+test("important-date: later relative phrasing supersedes an earlier explicit date", () => {
+  const matterId = "test-matter-date-relative-supersede";
+  const derived = deriveImportantDateSlot(
+    [
+      scheduleStatusEvent({
+        matterId,
+        eventId: `${matterId}-earlier`,
+        occurredAt: "2026-08-01T09:00:00Z",
+        sourceRecordedAt: "2026-08-01T09:00:00Z",
+        action: "Recorded the hearing date.",
+        object: "2026-10-01",
+        artifactId: `${matterId}-artifact-earlier`,
+      }),
+      scheduleStatusEvent({
+        matterId,
+        eventId: `${matterId}-later`,
+        occurredAt: "2026-09-10T09:00:00Z",
+        sourceRecordedAt: "2026-09-10T09:00:00Z",
+        action: "Reported that the hearing was moved to next month.",
+        object: "Hearing",
+        artifactId: `${matterId}-artifact-later`,
+      }),
+    ],
+    matterId,
+    IMPORTANT_DATE_AS_OF,
+  );
+
+  assert.equal(derived.state, "UNKNOWN");
+  assert.equal(derived.value, "Unknown");
+  assert.notEqual(derived.value, "October 1, 2026");
+});
+
+test("important-date: events after asOf are ignored", () => {
+  const matterId = "test-matter-date-asof";
+  const derived = deriveImportantDateSlot(
+    [
+      scheduleStatusEvent({
+        matterId,
+        eventId: `${matterId}-before`,
+        occurredAt: "2026-09-10T09:00:00Z",
+        sourceRecordedAt: "2026-09-10T09:00:00Z",
+        action: "Recorded the hearing date.",
+        object: "2026-10-01",
+        artifactId: `${matterId}-artifact-before`,
+      }),
+      scheduleStatusEvent({
+        matterId,
+        eventId: `${matterId}-after`,
+        occurredAt: "2026-09-20T09:00:00Z",
+        sourceRecordedAt: "2026-09-20T09:00:00Z",
+        action: "Recorded the continued hearing date.",
+        object: "2026-11-01",
+        artifactId: `${matterId}-artifact-after`,
+      }),
+    ],
+    matterId,
+    IMPORTANT_DATE_AS_OF,
+  );
+
+  assert.equal(derived.value, "October 1, 2026");
+  assert.deepEqual(derived.evidenceIds, [`${matterId}-artifact-before`]);
+});
+
+test("important-date: invalid asOf is UNKNOWN", () => {
+  const matterId = "test-matter-date-invalid-asof";
+  const events = [
+    scheduleStatusEvent({
+      matterId,
+      eventId: `${matterId}-schedule`,
+      occurredAt: "2026-09-12T09:00:00Z",
+      sourceRecordedAt: "2026-09-12T09:00:00Z",
+      action: "Recorded the hearing date.",
+      object: "2026-10-15",
+    }),
+  ];
+
+  for (const asOf of ["", "   ", "not-a-date"]) {
+    const derived = deriveImportantDateSlot(events, matterId, asOf);
+    assert.equal(
+      derived.state,
+      "UNKNOWN",
+      `Invalid asOf ${JSON.stringify(asOf)} must be explicit UNKNOWN`,
+    );
+    assert.notEqual(
+      derived.value,
+      "October 15, 2026",
+      `Invalid asOf ${JSON.stringify(asOf)} must not keep a date`,
+    );
+  }
+});
+
+test("important-date: matter isolation ignores another matter's date", () => {
+  const matterId = "test-matter-date-isolation";
+  const otherMatterId = "test-matter-date-other";
+  const derived = deriveImportantDateSlot(
+    [
+      scheduleStatusEvent({
+        matterId: otherMatterId,
+        eventId: `${otherMatterId}-schedule`,
+        occurredAt: "2026-09-12T09:00:00Z",
+        sourceRecordedAt: "2026-09-12T09:00:00Z",
+        action: "Recorded the hearing date.",
+        object: "2026-10-15",
+      }),
+    ],
+    matterId,
+    IMPORTANT_DATE_AS_OF,
+  );
+
+  assert.equal(derived.state, "UNKNOWN");
+  assert.equal(derived.value, "Unknown");
+  assert.equal(derived.evidenceIds.length, 0);
+});
+
+test("important-date: structured date wins over a different date in action text", () => {
+  const matterId = "test-matter-date-structured-wins";
+  const derived = deriveImportantDateSlot(
+    [
+      scheduleStatusEvent({
+        matterId,
+        eventId: `${matterId}-schedule`,
+        occurredAt: "2026-09-12T09:00:00Z",
+        sourceRecordedAt: "2026-09-12T09:00:00Z",
+        action: "Noted an old target of October 1, 2026.",
+        object: "2026-10-15",
+      }),
+    ],
+    matterId,
+    IMPORTANT_DATE_AS_OF,
+  );
+
+  assert.equal(derived.state, "SUPPORTED");
+  assert.equal(derived.value, "October 15, 2026");
 });

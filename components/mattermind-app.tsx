@@ -10,7 +10,7 @@ import {
 import { syntheticCurrentStateGroundTruth } from "@/data/synthetic-current-state";
 import { buildEligibleEvidenceSet } from "@/lib/evidence-processing";
 import { extractOperationalEvents } from "@/lib/operational-events";
-import { deriveCurrentStatusSlot, deriveLastImportantEventSlot, deriveWaitingOnSlot, deriveNextActionSlot, deriveOwnerSlot } from "@/lib/current-state-reasoning";
+import { deriveCurrentStatusSlot, deriveLastImportantEventSlot, deriveWaitingOnSlot, deriveNextActionSlot, deriveOwnerSlot, deriveImportantDateSlot } from "@/lib/current-state-reasoning";
 import { EvidencePanel } from "@/components/evidence-panel";
 import { StatusBrief } from "@/components/status-brief";
 import { ArrowRightIcon, DocumentIcon, LockIcon } from "@/components/icons";
@@ -65,6 +65,12 @@ const derivedOwnerSlot = deriveOwnerSlot(
   syntheticCurrentStateGroundTruth.asOf,
 );
 
+const derivedImportantDateSlot = deriveImportantDateSlot(
+  operationalEvents,
+  syntheticMatterBrief.matter.id,
+  syntheticCurrentStateGroundTruth.asOf,
+);
+
 // Build the brief with derived slots and predefined other slots
 const matterBrief = {
   ...syntheticMatterBrief,
@@ -74,6 +80,7 @@ const matterBrief = {
     if (claim.id === "waiting-on") return derivedWaitingOnSlot;
     if (claim.id === "next-action") return derivedNextActionSlot;
     if (claim.id === "owner") return derivedOwnerSlot;
+    if (claim.id === "important-date") return derivedImportantDateSlot;
     return claim;
   }),
 };
@@ -204,7 +211,7 @@ export function MatterMindApp() {
                 </h2>
                 <p className="mt-2 text-sm leading-6 text-slate-600">
                   This increment derives the current-status, last-important-event, waiting-on,
-                  next-action, and owner slots from operational events. The other 2 slots remain predefined. Show
+                  next-action, owner, and important-date slots from operational events. The other 1 slot remains predefined. Show
                   the brief to review claims, evidence states, and source provenance.
                 </p>
               </div>

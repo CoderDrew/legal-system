@@ -56,7 +56,7 @@ operational events
 
 Current-state ground truth is defined for Smith v. Acme (matter-2026-0142). The fixture specifies expected current-state conclusions for each brief slot, including supersession relationships, supporting event IDs, and judgment rationales.
 
-**Deterministic current-state reasoning is partially implemented:** Five slots (current-status, last-important-event, waiting-on, next-action, and owner) are now derived from operational events. The remaining two Matter Status Brief slots remain predefined synthetic output. Full current-state reasoning across all slots is not yet implemented.
+**Deterministic current-state reasoning is partially implemented:** Six slots (current-status, last-important-event, waiting-on, next-action, owner, and important-date) are now derived from operational events. The remaining Matter Status Brief slot remains predefined synthetic output. Full current-state reasoning across all slots is not yet implemented.
 
 Not yet implemented: AI or model integration, current-state reasoning, supersession, event reconciliation or deduplication, real Clio or Microsoft 365 integrations, production authentication, production database or infrastructure, and legal deadline calculation or legal conclusions.
 
