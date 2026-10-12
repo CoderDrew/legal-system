@@ -1291,53 +1291,79 @@ function mentionedFirmSideIdentities(
   );
 }
 
+function normalizedStatement(text: string): string {
+  return text.trim().replace(/[.]+$/g, "").trim();
+}
+
 /**
- * True when the name sits in a positive assignment construction — the
- * only text path that can produce an owner. Mentioning a name next to a
- * role label, or in departure wording, is not enough.
+ * Split on clause boundaries. `and` starts a new clause only when it
+ * introduces a file transfer (resigned and the file was reassigned to
+ * Y). Any leftover `and` in the final clause makes that clause
+ * multi-part and therefore not clean.
  */
-function isPositiveAssignmentMention(action: string, name: string): boolean {
-  const escaped = boundPersonName(name);
-  if (!escaped) return false;
-  return (
-    new RegExp(
-      `\\b(?:recorded|assigned|named|designated|appointed)\\s+${escaped}\\s+as\\s+(?:the\\s+)?(?:responsible\\s+attorney|owner|counsel(?:\\s+of\\s+record)?)\\b`,
-      "i"
-    ).test(action) ||
-    new RegExp(
-      `\\b${escaped}\\b\\s+(?:took\\s+over|has\\s+taken\\s+over|is\\s+taking\\s+over)\\b`,
-      "i"
-    ).test(action) ||
-    new RegExp(
-      `\\b${escaped}\\b\\s+(?:will\\s+handle|is\\s+handling|handles)\\b`,
-      "i"
-    ).test(action) ||
-    new RegExp(`\\breplaced\\s+by\\s+${escaped}\\b`, "i").test(action) ||
-    new RegExp(`\\bsucceeded\\s+by\\s+${escaped}\\b`, "i").test(action) ||
-    new RegExp(
-      `\\b(?:reassigned|transferred|assigned|handed(?:\\s+off)?)\\s+to\\s+${escaped}\\b`,
-      "i"
-    ).test(action) ||
-    new RegExp(`\\bfrom\\b[\\s\\S]+?\\bto\\s+${escaped}\\b`, "i").test(action)
+function splitOwnerClauses(text: string): string[] {
+  return normalizedStatement(text)
+    .split(
+      /(?:[.;]+|\s+\bbut\b\s+|,?\s*\bthen\b\s+|\s+\band\s+(?=(?:the\s+file\s+was\s+)?(?:reassigned|transferred|handed(?:\s+off)?)\s+to\b))/i
+    )
+    .map((clause) => clause.trim())
+    .filter((clause) => clause.length > 0);
+}
+
+function isMultiPartOwnerClause(clause: string): boolean {
+  return /\band\b/i.test(clause);
+}
+
+function clauseStartsHistorical(clause: string): boolean {
+  return /^(?:at\s+first|originally|previously|formerly|initially)\b/i.test(
+    clause
   );
 }
 
 /**
- * Text fallback: a known firm-side identity becomes owner only when the
- * action is a positive assignment of that person. A lone name, a role
- * label, or departure wording without an incoming assignment is not
- * enough.
+ * The final clause is a clean positive assignment or transfer TO this
+ * known identity, with nothing after that assignment in the clause.
+ * Earlier departure clauses about other people are ignored.
+ */
+function isCleanPositiveClause(clause: string, name: string): boolean {
+  const escaped = boundPersonName(name);
+  if (!escaped) return false;
+  const text = normalizedStatement(clause);
+  if (clauseStartsHistorical(text)) return false;
+  return [
+    `^(?:recorded|assigned|named|designated|appointed)\\s+${escaped}\\s+as\\s+(?:the\\s+)?(?:responsible\\s+attorney|owner|counsel(?:\\s+of\\s+record)?)$`,
+    `^(?:now\\s+)?(?:the\\s+file\\s+was\\s+)?(?:assigned|reassigned|transferred|handed(?:\\s+off)?)\\s+to\\s+${escaped}$`,
+    `^(?:transferred|reassigned|handed(?:\\s+off)?)\\s+from\\b[\\s\\S]+?\\bto\\s+${escaped}$`,
+    `(?:^|and\\s+)(?:noted\\s+that\\s+)?${escaped}\\s+(?:took\\s+over|has\\s+taken\\s+over|is\\s+taking\\s+over)(?:\\s+from\\b.*)?$`,
+    `(?:^|and\\s+)(?:noted\\s+that\\s+)?${escaped}\\s+(?:will\\s+handle|is\\s+handling|handles)(?:\\s+[\\w][\\w\\s'-]*)?$`,
+    `^[\\s\\S]*?\\bwas\\s+replaced\\s+by\\s+${escaped}$`,
+    `^replaced\\s+by\\s+${escaped}$`,
+    `^succeeded\\s+by\\s+${escaped}$`,
+  ].some((source) => new RegExp(source, "i").test(text));
+}
+
+/**
+ * Text fallback: the final clause is a clean positive assignment or
+ * transfer TO a known firm-side identity, and nothing after it reverses
+ * it. Earlier departure clauses about other people are fine. Extra
+ * clauses in the final position, or more than one assigned name in that
+ * clause, are UNKNOWN.
  */
 function inferOwnerFromActionText(
   action: string,
   matter: SyntheticMatter,
   requestingUser: SyntheticUser
 ): string | null {
+  const clauses = splitOwnerClauses(action);
+  const last = clauses[clauses.length - 1];
+  if (!last || clauseStartsHistorical(last) || isMultiPartOwnerClause(last)) {
+    return null;
+  }
   const assigned = mentionedFirmSideIdentities(
-    action,
+    last,
     matter,
     requestingUser
-  ).filter((name) => isPositiveAssignmentMention(action, name));
+  ).filter((name) => isCleanPositiveClause(last, name));
   if (assigned.length === 1) {
     return assigned[0];
   }
@@ -1366,15 +1392,15 @@ function ownerClaim(
  * identities (responsible attorney or requesting user). A role label
  * such as "Responsible attorney" is not the person. Email local-part
  * matching is used when the source artifact identifies a known person.
- * Text is an INFERRED fallback only when the action is a positive
- * assignment of a known firm-side identity (recorded/assigned/named as
- * responsible attorney, took over, replaced by, transferred to, and
- * equivalent constructions). A lone name, including one paired with a
- * role label, is UNKNOWN.
+ * Text is an INFERRED fallback only when the final clause is a clean
+ * positive assignment or transfer TO a known firm-side identity, with
+ * nothing after that assignment reversing it. Earlier departure clauses
+ * about other people are fine. Extra clauses in the final position, or
+ * more than one assigned name, are UNKNOWN.
  *
  * Smith v. Acme is SUPPORTED because its event action is
- * "Recorded Alex Thompson as the responsible attorney." — a positive
- * assignment of a known firm-side identity, not a special case.
+ * "Recorded Alex Thompson as the responsible attorney." — a clean
+ * positive assignment of a known firm-side identity, not a special case.
  */
 export function deriveOwnerSlot(
   events: OperationalEvent[],
@@ -1432,4 +1458,466 @@ export function deriveOwnerSlot(
   }
 
   return unknownOwner();
+}
+
+type CalendarDate = {
+  year: number;
+  month: number;
+  day: number;
+};
+
+type CalendarDateMatch = CalendarDate & {
+  index: number;
+  length: number;
+};
+
+const MONTH_INDEX: Record<string, number> = {
+  january: 0,
+  jan: 0,
+  february: 1,
+  feb: 1,
+  march: 2,
+  mar: 2,
+  april: 3,
+  apr: 3,
+  may: 4,
+  june: 5,
+  jun: 5,
+  july: 6,
+  jul: 6,
+  august: 7,
+  aug: 7,
+  september: 8,
+  sept: 8,
+  sep: 8,
+  october: 9,
+  oct: 9,
+  november: 10,
+  nov: 10,
+  december: 11,
+  dec: 11,
+};
+
+function isValidCalendarDate(
+  year: number,
+  month: number,
+  day: number
+): boolean {
+  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) {
+    return false;
+  }
+  if (month < 0 || month > 11 || day < 1 || day > 31) {
+    return false;
+  }
+  const utc = Date.UTC(year, month, day);
+  const check = new Date(utc);
+  return (
+    check.getUTCFullYear() === year &&
+    check.getUTCMonth() === month &&
+    check.getUTCDate() === day
+  );
+}
+
+function calendarDateUtcDay(date: CalendarDate): number {
+  return Date.UTC(date.year, date.month, date.day);
+}
+
+function formatCalendarDate(date: CalendarDate): string {
+  return new Date(calendarDateUtcDay(date)).toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+function asOfUtcDay(asOfTime: number): number {
+  const asOf = new Date(asOfTime);
+  return Date.UTC(asOf.getUTCFullYear(), asOf.getUTCMonth(), asOf.getUTCDate());
+}
+
+function isCalendarDateCurrentAsOf(date: CalendarDate, asOfTime: number): boolean {
+  return calendarDateUtcDay(date) >= asOfUtcDay(asOfTime);
+}
+
+function calendarDateFromParts(
+  year: number,
+  month: number,
+  day: number
+): CalendarDate | null {
+  if (!isValidCalendarDate(year, month, day)) {
+    return null;
+  }
+  return { year, month, day };
+}
+
+function parseCompleteCalendarDate(text: string): CalendarDate | null {
+  const trimmed = text.trim();
+  const iso = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})(?:T.*)?$/);
+  if (iso) {
+    return calendarDateFromParts(
+      Number(iso[1]),
+      Number(iso[2]) - 1,
+      Number(iso[3])
+    );
+  }
+
+  const monthNames = Object.keys(MONTH_INDEX).join("|");
+  const longForm = trimmed.match(
+    new RegExp(
+      `^(${monthNames})\\s+(\\d{1,2})(?:st|nd|rd|th)?,?\\s+(\\d{4})$`,
+      "i"
+    )
+  );
+  if (longForm) {
+    return calendarDateFromParts(
+      Number(longForm[3]),
+      MONTH_INDEX[longForm[1].toLowerCase()],
+      Number(longForm[2])
+    );
+  }
+
+  const numeric = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (numeric) {
+    return calendarDateFromParts(
+      Number(numeric[3]),
+      Number(numeric[1]) - 1,
+      Number(numeric[2])
+    );
+  }
+
+  return null;
+}
+
+function findCalendarDatesInText(text: string): CalendarDateMatch[] {
+  const matches: CalendarDateMatch[] = [];
+  const monthNames = Object.keys(MONTH_INDEX).join("|");
+
+  for (const match of text.matchAll(/\b(\d{4})-(\d{2})-(\d{2})\b/g)) {
+    if (match.index === undefined) continue;
+    const date = calendarDateFromParts(
+      Number(match[1]),
+      Number(match[2]) - 1,
+      Number(match[3])
+    );
+    if (date) {
+      matches.push({ ...date, index: match.index, length: match[0].length });
+    }
+  }
+
+  for (const match of text.matchAll(
+    new RegExp(
+      `\\b(${monthNames})\\s+(\\d{1,2})(?:st|nd|rd|th)?,?\\s+(\\d{4})\\b`,
+      "gi"
+    )
+  )) {
+    if (match.index === undefined) continue;
+    const date = calendarDateFromParts(
+      Number(match[3]),
+      MONTH_INDEX[match[1].toLowerCase()],
+      Number(match[2])
+    );
+    if (date) {
+      matches.push({ ...date, index: match.index, length: match[0].length });
+    }
+  }
+
+  for (const match of text.matchAll(/\b(\d{1,2})\/(\d{1,2})\/(\d{4})\b/g)) {
+    if (match.index === undefined) continue;
+    const date = calendarDateFromParts(
+      Number(match[3]),
+      Number(match[1]) - 1,
+      Number(match[2])
+    );
+    if (date) {
+      matches.push({ ...date, index: match.index, length: match[0].length });
+    }
+  }
+
+  return matches.sort((left, right) => left.index - right.index);
+}
+
+function datesEqual(left: CalendarDate, right: CalendarDate): boolean {
+  return (
+    left.year === right.year &&
+    left.month === right.month &&
+    left.day === right.day
+  );
+}
+
+function caseInsensitiveToken(word: string): string {
+  return word.replace(/[A-Za-z]/g, (ch) => `[${ch.toUpperCase()}${ch.toLowerCase()}]`);
+}
+
+function caseInsensitivePhrase(phrase: string): string {
+  return phrase.split(/\s+/).map(caseInsensitiveToken).join("\\s+");
+}
+
+function calendarDateTokenPattern(): string {
+  const monthNames = Object.keys(MONTH_INDEX)
+    .map(caseInsensitiveToken)
+    .join("|");
+  return `(?:\\d{4}-\\d{2}-\\d{2}|(?:${monthNames})\\s+\\d{1,2}(?:st|nd|rd|th)?,?\\s+\\d{4}|\\d{1,2}/\\d{1,2}/\\d{4})`;
+}
+
+function scheduleSubjectPattern(): string {
+  const head = [
+    "Motion hearing",
+    "Status conference",
+    "Hearing",
+    "Trial",
+    "Deposition",
+    "Mediation",
+    "Conference",
+    "Deadline",
+    "Response",
+    "Filing",
+  ]
+    .map(caseInsensitivePhrase)
+    .join("|");
+  const ofName =
+    "(?:\\s+[Oo][Ff]\\s+[A-Z][A-Za-z'-]*(?:\\s+[A-Z][A-Za-z'-]*){0,2})?";
+  return `(?:${head}${ofName})`;
+}
+
+function schedulePlaceWordPattern(): string {
+  const stems = [
+    "cancel",
+    "vacat",
+    "postpon",
+    "stay",
+    "stricken",
+    "struck",
+    "off",
+    "continu",
+    "tbd",
+    "tba",
+    "adjourn",
+    "defer",
+    "suspend",
+    "withdraw",
+    "drop",
+    "moot",
+    "hold",
+    "remov",
+  ]
+    .map(caseInsensitiveToken)
+    .join("|");
+  // Title case only: first letter upper, rest not ALL-CAPS.
+  return `(?!(?:${stems}))[A-Z][a-z]+(?:['-][A-Za-z]+)*`;
+}
+
+function scheduleRoomNumberPattern(): string {
+  return "[A-Za-z]?[0-9]+[A-Za-z]?";
+}
+
+function schedulePlacePattern(): string {
+  const room = `(?:(?:${["Courtroom", "Room", "Dept", "Department"].map(caseInsensitiveToken).join("|")})\\.?\\s+${scheduleRoomNumberPattern()})`;
+  const word = schedulePlaceWordPattern();
+  return `(?:${room}|${word})`;
+}
+
+function scheduleTimePattern(): string {
+  return "(?:\\d{1,2}(?::\\d{2})?\\s*[AaPp]\\.?[Mm]\\.?)";
+}
+
+function scheduleAfterDatePattern(): string {
+  const time = `(?:\\s+[Aa][Tt]\\s+${scheduleTimePattern()})?`;
+  const place = `(?:\\s+(?:[Ii][Nn]|[Aa][Tt])\\s+${schedulePlacePattern()})?`;
+  return `${time}${place}`;
+}
+
+function hasForbiddenScheduleWords(text: string): boolean {
+  return /\b(?:not|never|no|will|be|who|which|that)\b/i.test(text);
+}
+
+function statementHasMultipleSentences(text: string): boolean {
+  if (splitScheduleSentences(text).length !== 1) return true;
+  const withoutFinalStop = text.trim().replace(/[.?!]+$/, "");
+  return /[.?!]/.test(withoutFinalStop);
+}
+
+function splitScheduleSentences(text: string): string[] {
+  return text
+    .trim()
+    .split(/(?<=\S)\.(?:\s+|$)/)
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => sentence.length > 0);
+}
+
+function hasUniqueScheduleResult(dates: CalendarDate[]): boolean {
+  const unique = dates.filter(
+    (date, index, all) =>
+      all.findIndex((other) => datesEqual(other, date)) === index
+  );
+  // Defensive: the whole-text template already yields at most one date.
+  return unique.length === 1;
+}
+
+function isScheduleTargetDate(text: string, date: CalendarDateMatch): boolean {
+  const before = text.slice(0, date.index);
+  if (
+    /(?:\bset\s+for|\bscheduled\s+for|\bdue\s+by|\bdue|\bby)\s+$/i.test(before)
+  ) {
+    return true;
+  }
+  return new RegExp(
+    `\\b(?:continued|moved|rescheduled)(?:\\s+from\\s+${calendarDateTokenPattern()})?\\s+to\\s+$`,
+    "i"
+  ).test(before);
+}
+
+function allScheduleTargetDates(text: string): CalendarDate[] {
+  return findCalendarDatesInText(text).filter((date) =>
+    isScheduleTargetDate(text, date)
+  );
+}
+
+function matchWholeTextScheduleTemplate(text: string): CalendarDate | null {
+  const date = calendarDateTokenPattern();
+  const after = scheduleAfterDatePattern();
+  const subject = `(?:${scheduleSubjectPattern()}\\s+)?`;
+  const setForm = `(?:${["set for", "scheduled for", "due by", "due", "by"].map(caseInsensitivePhrase).join("|")})`;
+  const continuance = `(?:${["continued", "moved", "rescheduled"].map(caseInsensitiveToken).join("|")})(?:\\s+${caseInsensitiveToken("from")}\\s+${date})?\\s+${caseInsensitiveToken("to")}`;
+  const setMatch = text
+    .trim()
+    .match(new RegExp(`^${subject}${setForm}\\s+(${date})${after}\\.?$`));
+  if (setMatch) {
+    return parseCompleteCalendarDate(setMatch[1]);
+  }
+  const continued = text
+    .trim()
+    .match(new RegExp(`^${subject}${continuance}\\s+(${date})${after}\\.?$`));
+  if (continued) {
+    return parseCompleteCalendarDate(continued[1]);
+  }
+  return null;
+}
+
+function pickUniqueScheduleDate(
+  matched: CalendarDate | null,
+  targets: CalendarDate[]
+): CalendarDate | null {
+  // Defensive: the whole-text template already yields at most one date.
+  if (!hasUniqueScheduleResult(targets)) return null;
+  return matched;
+}
+
+/**
+ * Text fallback: the whole trimmed event text must match one schedule
+ * template. Anything else is UNKNOWN.
+ *
+ *   SUBJECT (set for|scheduled for|due|due by|by) DATE [at TIME] [in|at PLACE] [.]
+ *   SUBJECT (continued|moved|rescheduled) [from DATE] to DATE [at TIME] [in|at PLACE] [.]
+ */
+function inferStrictScheduleDate(text: string): CalendarDate | null {
+  const statement = text.trim();
+  if (!statement) return null;
+  if (hasForbiddenScheduleWords(statement)) return null;
+  if (statementHasMultipleSentences(statement)) return null;
+  const sentence = splitScheduleSentences(statement)[0] ?? statement;
+  return pickUniqueScheduleDate(
+    matchWholeTextScheduleTemplate(sentence),
+    allScheduleTargetDates(statement)
+  );
+}
+
+/**
+ * Text fallback: keep a date only when the whole event text matches
+ * the strict schedule template and yields exactly one date.
+ */
+function pickCurrentCalendarDate(
+  _dates: CalendarDateMatch[],
+  text: string
+): CalendarDate | null {
+  return inferStrictScheduleDate(text);
+}
+
+function unknownImportantDate(): StatusClaim {
+  return {
+    id: "important-date",
+    label: "Deadline / Important Date",
+    value: "Unknown",
+    state: "UNKNOWN",
+    evidenceIds: [],
+  };
+}
+
+function importantDateClaim(
+  date: CalendarDate,
+  state: "SUPPORTED" | "INFERRED",
+  evidenceId: string
+): StatusClaim {
+  return {
+    id: "important-date",
+    label: "Deadline / Important Date",
+    value: formatCalendarDate(date),
+    state,
+    evidenceIds: [evidenceId],
+  };
+}
+
+/**
+ * Derives the important-date slot from operational events.
+ *
+ * Structured data first: the latest SCHEDULE_STATUS_REPORTED event at or
+ * before asOf, via getLatestEvent. If the object itself is a complete
+ * valid calendar date, that date is SUPPORTED. Otherwise text is an
+ * INFERRED fallback only when the whole trimmed action matches one
+ * schedule template (plain subject, set for/scheduled for/due/due by/by
+ * or continued/moved/rescheduled [from DATE] to DATE, optional time and
+ * place). Extra sentences, extra place text, forbidden words, and two
+ * or more resulting dates are UNKNOWN. Relative phrasing and bare "to"
+ * are UNKNOWN. Numeric dates in text are US MM/DD/YYYY. Comparison with
+ * asOf is by UTC calendar day.
+ *
+ * Later schedule events supersede earlier ones. A date whose UTC
+ * calendar day is before asOf is no longer current.
+ *
+ * Event timestamps are when the report was recorded, not the scheduled
+ * date. Smith v. Acme is UNKNOWN because its schedule event object is
+ * not a date and its action has no explicit calendar date — not
+ * because a fixture phrase is special-cased.
+ */
+export function deriveImportantDateSlot(
+  events: OperationalEvent[],
+  matterId: string,
+  asOf: string
+): StatusClaim {
+  const asOfTime = parseAsOfTime(asOf);
+  if (asOfTime === null) {
+    return unknownImportantDate();
+  }
+
+  const scheduleEvents = events.filter(
+    (event) =>
+      event.matterId === matterId &&
+      event.eventType === "SCHEDULE_STATUS_REPORTED" &&
+      getEventTimestamp(event) <= asOfTime
+  );
+
+  if (scheduleEvents.length === 0) {
+    return unknownImportantDate();
+  }
+
+  const latest = getLatestEvent(scheduleEvents);
+  const evidenceId = latest.provenance.sourceArtifactId;
+
+  const structuredDate = parseCompleteCalendarDate(latest.object ?? "");
+  if (structuredDate) {
+    if (!isCalendarDateCurrentAsOf(structuredDate, asOfTime)) {
+      return unknownImportantDate();
+    }
+    return importantDateClaim(structuredDate, "SUPPORTED", evidenceId);
+  }
+
+  const inferredDate = pickCurrentCalendarDate(
+    findCalendarDatesInText(latest.action),
+    latest.action
+  );
+  if (inferredDate && isCalendarDateCurrentAsOf(inferredDate, asOfTime)) {
+    return importantDateClaim(inferredDate, "INFERRED", evidenceId);
+  }
+
+  return unknownImportantDate();
 }
