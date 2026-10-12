@@ -10,7 +10,7 @@ import {
 import { syntheticCurrentStateGroundTruth } from "@/data/synthetic-current-state";
 import { buildEligibleEvidenceSet } from "@/lib/evidence-processing";
 import { extractOperationalEvents } from "@/lib/operational-events";
-import { deriveCurrentStatusSlot, deriveLastImportantEventSlot, deriveWaitingOnSlot, deriveNextActionSlot } from "@/lib/current-state-reasoning";
+import { deriveCurrentStatusSlot, deriveLastImportantEventSlot, deriveWaitingOnSlot, deriveNextActionSlot, deriveOwnerSlot } from "@/lib/current-state-reasoning";
 
 const evidenceProcessing = buildEligibleEvidenceSet({
   user: syntheticRequestingUser,
@@ -748,6 +748,70 @@ test("non-client possessive approval: Judge Lee's approval != client approval", 
   assert.ok(
     derived.value.includes("Judge Lee") || derived.value.endsWith("approval."),
     `Should mention Judge Lee or use generic 'approval'. Got: ${derived.value}`,
+  );
+});
+
+test("current-status: object text keeps original proper-noun casing", () => {
+  const testMatter = {
+    id: "test-matter-status-casing",
+    matterNumber: "2026-STATUS-CASING",
+    name: "Casing Test",
+    client: "Jane Doe",
+    responsibleAttorney: "Test Attorney",
+    status: "Active" as const,
+    participantIds: [],
+  };
+
+  const syntheticEvents: OperationalEvent[] = [
+    {
+      eventId: "test-status-casing-doc",
+      matterId: "test-matter-status-casing",
+      eventType: "DOCUMENT_SENT",
+      occurredAt: "2026-05-10T10:00:00Z",
+      actor: "Attorney",
+      action: "Sent Judge Lee's ruling notes",
+      object: "Judge Lee's ruling",
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: "test-art-status-casing-doc",
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-05-10T10:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "Judge Lee's ruling",
+      },
+    },
+    {
+      eventId: "test-status-casing-approval",
+      matterId: "test-matter-status-casing",
+      eventType: "APPROVAL_REQUESTED",
+      occurredAt: "2026-05-10T11:00:00Z",
+      actor: "Attorney",
+      action: "Requested attorney review of Judge Lee's ruling",
+      object: "Judge Lee's ruling",
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: "test-art-status-casing-approval",
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-05-10T11:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "need review",
+      },
+    },
+  ];
+
+  const derived = deriveCurrentStatusSlot(
+    syntheticEvents,
+    "test-matter-status-casing",
+    testMatter,
+  );
+
+  assert.ok(
+    derived.value.includes("Judge Lee's ruling"),
+    "Current-status object must keep proper-noun casing",
+  );
+  assert.ok(
+    !derived.value.includes("judge lee's ruling"),
+    "Current-status object must not be lowercased",
   );
 });
 
@@ -3881,4 +3945,1003 @@ test("next-action: ground truth is unchanged at its asOf", () => {
   assert.ok(expectation);
   assert.equal(derived.value, expectation.expectedValue);
   assert.equal(derived.state, expectation.expectedState);
+});
+
+test("next-action: invalid or missing asOf is UNKNOWN, not never-stale", () => {
+  const matterId = "test-matter-na-invalid-asof";
+  const testMatter = makeNextActionMatter(matterId);
+  const syntheticEvents = smithStyleApprovalEvents(matterId);
+
+  for (const asOf of ["", "   ", "not-a-date"]) {
+    const derived = deriveNextActionSlot(
+      syntheticEvents,
+      matterId,
+      testMatter,
+      [],
+      syntheticRequestingUser,
+      asOf,
+    );
+    assert.equal(
+      derived.state,
+      "UNKNOWN",
+      `Invalid asOf ${JSON.stringify(asOf)} must be explicit UNKNOWN`,
+    );
+    assert.notEqual(
+      derived.value,
+      SMITH_STYLE_SENTENCE,
+      `Invalid asOf ${JSON.stringify(asOf)} must not silently mean never stale`,
+    );
+  }
+});
+
+test("next-action: webmail domain must not make opposing counsel look like our side", () => {
+  const matterId = "test-matter-na-webmail-domain";
+  const testMatter = makeNextActionMatter(matterId);
+  const docArtifactId = `${matterId}-artifact-doc`;
+  const approvalArtifactId = `${matterId}-artifact-approval`;
+  const testEvidence: EligibleEvidenceItem[] = [
+    makeEmailEvidence({
+      id: docArtifactId,
+      from: "pat.lee@gmail.com",
+      to: ["jordan.smith@example.com"],
+      timestamp: "2026-09-16T10:00:00Z",
+    }),
+    makeEmailEvidence({
+      id: approvalArtifactId,
+      from: "alex.thompson@gmail.com",
+      to: ["jordan.smith@example.com"],
+      timestamp: "2026-09-17T12:00:00Z",
+    }),
+  ];
+  const syntheticEvents: OperationalEvent[] = [
+    makeNextActionEvent({
+      eventId: `${matterId}-doc`,
+      matterId,
+      eventType: "DOCUMENT_SENT",
+      occurredAt: "2026-09-16T10:00:00Z",
+      actor: "Opposing counsel",
+      action: "Sent revised terms.",
+      object: "Revised terms",
+      provenance: {
+        sourceArtifactId: docArtifactId,
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-16T10:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "revised terms",
+      },
+    }),
+    makeNextActionEvent({
+      eventId: `${matterId}-approval`,
+      matterId,
+      eventType: "APPROVAL_REQUESTED",
+      occurredAt: "2026-09-17T12:00:00Z",
+      actor: "Attorney",
+      action: "Requested client approval before responding.",
+      object: "Revised terms",
+      provenance: {
+        sourceArtifactId: approvalArtifactId,
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-17T12:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "approval before responding",
+      },
+    }),
+  ];
+
+  const derived = deriveNextActionSlot(
+    syntheticEvents,
+    matterId,
+    testMatter,
+    testEvidence,
+    syntheticRequestingUser,
+    NEXT_ACTION_AS_OF,
+  );
+
+  assert.ok(
+    derived.value.includes("opposing counsel"),
+    "gmail.com shared with our attorney must not reclassify opposing counsel as our side",
+  );
+  assert.ok(
+    !/proceed with/i.test(derived.value),
+    "Opposing counsel on gmail.com must remain a respond-to target",
+  );
+});
+
+test("next-action: bare Paralegal role label is our side, not a respond-to target", () => {
+  const matterId = "test-matter-na-own-bare-paralegal";
+  const testMatter = makeNextActionMatter(matterId);
+  const syntheticEvents: OperationalEvent[] = [
+    makeNextActionEvent({
+      eventId: `${matterId}-doc`,
+      matterId,
+      eventType: "DOCUMENT_SENT",
+      occurredAt: "2026-09-16T10:00:00Z",
+      actor: "Paralegal",
+      action: "Sent the compiled exhibits.",
+      object: "Exhibits",
+      provenance: {
+        sourceArtifactId: `${matterId}-artifact-doc`,
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-16T10:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "compiled exhibits",
+      },
+    }),
+    makeNextActionEvent({
+      eventId: `${matterId}-approval`,
+      matterId,
+      eventType: "APPROVAL_REQUESTED",
+      occurredAt: "2026-09-17T12:00:00Z",
+      actor: "Attorney",
+      action: "Requested client approval before filing.",
+      object: "Exhibits",
+      provenance: {
+        sourceArtifactId: `${matterId}-artifact-approval`,
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-17T12:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "approval before filing",
+      },
+    }),
+  ];
+
+  const derived = deriveNextActionSlot(
+    syntheticEvents,
+    matterId,
+    testMatter,
+    [],
+    syntheticRequestingUser,
+    NEXT_ACTION_AS_OF,
+  );
+
+  assert.ok(
+    !/respond to paralegal/i.test(derived.value),
+    "Must not produce Respond to Paralegal",
+  );
+});
+
+test("next-action: Active (not settled) does not match the settled/closed regex", () => {
+  const matterId = "test-matter-na-not-settled";
+  const testMatter = makeNextActionMatter(matterId);
+  const syntheticEvents: OperationalEvent[] = [
+    ...smithStyleApprovalEvents(matterId),
+    makeNextActionEvent({
+      eventId: `${matterId}-active-not-settled`,
+      matterId,
+      eventType: "MATTER_STATUS_RECORDED",
+      occurredAt: "2026-09-20T09:00:00Z",
+      actor: null,
+      action: "Recorded the matter status as Active (not settled).",
+      object: "Matter status",
+      provenance: {
+        sourceArtifactId: `${matterId}-artifact-active`,
+        sourceSystem: "Clio",
+        sourceRecordedAt: "2026-09-20T09:00:00Z",
+        associationMethod: "AUTHORITATIVE_SOURCE_RELATIONSHIP",
+        evidenceExcerpt: "Matter status: Active (not settled)",
+      },
+    }),
+  ];
+
+  const derived = deriveNextActionSlot(
+    syntheticEvents,
+    matterId,
+    testMatter,
+    [],
+    syntheticRequestingUser,
+    NEXT_ACTION_AS_OF,
+  );
+
+  assert.equal(
+    derived.value,
+    SMITH_STYLE_SENTENCE,
+    "Active (not settled) must not be treated as Settled or Closed",
+  );
+});
+
+// ============================================================================
+// OWNER SLOT TESTS
+// ============================================================================
+
+function makeOwnerEvent(
+  event: Omit<OperationalEvent, "extractionMethod">,
+): OperationalEvent {
+  return {
+    ...event,
+    extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+  };
+}
+
+function makeOwnerMatter(
+  id: string,
+  overrides: Partial<SyntheticMatter> = {},
+): SyntheticMatter {
+  return {
+    id,
+    matterNumber: id,
+    name: `Test ${id}`,
+    client: "Jordan Smith",
+    responsibleAttorney: "Alex Thompson",
+    status: "Active",
+    participantIds: [],
+    ...overrides,
+  };
+}
+
+const OWNER_AS_OF = "2026-09-17T23:59:59Z";
+
+test("derived owner slot matches ground-truth expectation", () => {
+  const derived = deriveOwnerSlot(
+    extractedEvents,
+    syntheticMatters[0].id,
+    syntheticMatters[0],
+    evidenceProcessing.eligibleEvidence,
+    syntheticRequestingUser,
+    syntheticCurrentStateGroundTruth.asOf,
+  );
+  const expectation = syntheticCurrentStateGroundTruth.expectations.find(
+    (exp) => exp.slotId === "owner",
+  );
+
+  assert.ok(expectation, "Ground truth has owner expectation");
+  assert.equal(derived.id, "owner", "Derived slot has correct ID");
+  assert.equal(
+    derived.state,
+    expectation.expectedState,
+    "Derived state matches ground truth",
+  );
+  assert.equal(
+    derived.value,
+    expectation.expectedValue,
+    "Derived value matches ground truth",
+  );
+
+  const eventToArtifactMap = new Map(
+    extractedEvents.map((event) => [
+      event.eventId,
+      event.provenance.sourceArtifactId,
+    ]),
+  );
+  const expectedArtifactIds = expectation.supportingEventIds
+    .map((eventId) => eventToArtifactMap.get(eventId))
+    .filter((id): id is string => id !== undefined)
+    .sort();
+  const derivedArtifactIds = [...derived.evidenceIds].sort();
+
+  assert.deepEqual(
+    derivedArtifactIds,
+    expectedArtifactIds,
+    "Derived evidence artifacts match ground truth supporting events",
+  );
+});
+
+test("owner: no responsibility events returns UNKNOWN", () => {
+  const matterId = "test-matter-owner-none";
+  const derived = deriveOwnerSlot(
+    [
+      makeOwnerEvent({
+        eventId: `${matterId}-doc`,
+        matterId,
+        eventType: "DOCUMENT_SENT",
+        occurredAt: "2026-09-16T10:00:00Z",
+        actor: "Opposing counsel",
+        action: "Sent a letter.",
+        object: "Letter",
+        provenance: {
+          sourceArtifactId: `${matterId}-artifact-doc`,
+          sourceSystem: "Outlook",
+          sourceRecordedAt: "2026-09-16T10:00:00Z",
+          associationMethod: "EXPLICIT_MATTER_ID",
+          evidenceExcerpt: "letter",
+        },
+      }),
+    ],
+    matterId,
+    makeOwnerMatter(matterId),
+    [],
+    syntheticRequestingUser,
+    OWNER_AS_OF,
+  );
+
+  assert.equal(derived.state, "UNKNOWN");
+  assert.equal(derived.value, "Unknown");
+  assert.equal(derived.evidenceIds.length, 0);
+});
+
+test("owner: structured actor name is SUPPORTED", () => {
+  const matterId = "test-matter-owner-actor";
+  const derived = deriveOwnerSlot(
+    [
+      makeOwnerEvent({
+        eventId: `${matterId}-resp`,
+        matterId,
+        eventType: "RESPONSIBILITY_RECORDED",
+        occurredAt: "2026-09-12T09:00:00Z",
+        actor: "Alex Thompson",
+        action: "Assigned coverage for the file.",
+        object: null,
+        provenance: {
+          sourceArtifactId: `${matterId}-artifact-resp`,
+          sourceSystem: "Clio",
+          sourceRecordedAt: "2026-09-12T09:00:00Z",
+          associationMethod: "AUTHORITATIVE_SOURCE_RELATIONSHIP",
+          evidenceExcerpt: "assigned coverage",
+        },
+      }),
+    ],
+    matterId,
+    makeOwnerMatter(matterId),
+    [],
+    syntheticRequestingUser,
+    OWNER_AS_OF,
+  );
+
+  assert.equal(derived.state, "SUPPORTED");
+  assert.equal(derived.value, "Alex Thompson");
+  assert.deepEqual(derived.evidenceIds, [`${matterId}-artifact-resp`]);
+});
+
+test("owner: attorney role label without a named person is UNKNOWN", () => {
+  const matterId = "test-matter-owner-role";
+  const derived = deriveOwnerSlot(
+    [
+      makeOwnerEvent({
+        eventId: `${matterId}-resp`,
+        matterId,
+        eventType: "RESPONSIBILITY_RECORDED",
+        occurredAt: "2026-09-12T09:00:00Z",
+        actor: null,
+        action: "Updated the assignment on the matter record.",
+        object: "Responsible attorney",
+        provenance: {
+          sourceArtifactId: `${matterId}-artifact-resp`,
+          sourceSystem: "Clio",
+          sourceRecordedAt: "2026-09-12T09:00:00Z",
+          associationMethod: "AUTHORITATIVE_SOURCE_RELATIONSHIP",
+          evidenceExcerpt: "assignment updated",
+        },
+      }),
+    ],
+    matterId,
+    makeOwnerMatter(matterId, { responsibleAttorney: "Priya Nair" }),
+    [],
+    syntheticRequestingUser,
+    OWNER_AS_OF,
+  );
+
+  assert.equal(derived.state, "UNKNOWN");
+  assert.equal(derived.value, "Unknown");
+});
+
+test("owner: text fallback matching a known identity is INFERRED", () => {
+  const matterId = "test-matter-owner-text";
+  const derived = deriveOwnerSlot(
+    [
+      makeOwnerEvent({
+        eventId: `${matterId}-resp`,
+        matterId,
+        eventType: "RESPONSIBILITY_RECORDED",
+        occurredAt: "2026-09-12T09:00:00Z",
+        actor: null,
+        action: "Noted that Priya Nair will handle follow-up on this file.",
+        object: null,
+        provenance: {
+          sourceArtifactId: `${matterId}-artifact-resp`,
+          sourceSystem: "Outlook",
+          sourceRecordedAt: "2026-09-12T09:00:00Z",
+          associationMethod: "EXPLICIT_MATTER_ID",
+          evidenceExcerpt: "will handle follow-up",
+        },
+      }),
+    ],
+    matterId,
+    makeOwnerMatter(matterId, { responsibleAttorney: "Priya Nair" }),
+    [],
+    syntheticRequestingUser,
+    OWNER_AS_OF,
+  );
+
+  assert.equal(derived.state, "INFERRED");
+  assert.equal(derived.value, "Priya Nair");
+});
+
+test("owner: unknown name in text without structured identity is UNKNOWN", () => {
+  const matterId = "test-matter-owner-unknown-text";
+  const derived = deriveOwnerSlot(
+    [
+      makeOwnerEvent({
+        eventId: `${matterId}-resp`,
+        matterId,
+        eventType: "RESPONSIBILITY_RECORDED",
+        occurredAt: "2026-09-12T09:00:00Z",
+        actor: null,
+        action: "Noted that someone on the team will handle follow-up.",
+        object: null,
+        provenance: {
+          sourceArtifactId: `${matterId}-artifact-resp`,
+          sourceSystem: "Outlook",
+          sourceRecordedAt: "2026-09-12T09:00:00Z",
+          associationMethod: "EXPLICIT_MATTER_ID",
+          evidenceExcerpt: "someone on the team",
+        },
+      }),
+    ],
+    matterId,
+    makeOwnerMatter(matterId, { responsibleAttorney: "Priya Nair" }),
+    [],
+    syntheticRequestingUser,
+    OWNER_AS_OF,
+  );
+
+  assert.equal(derived.state, "UNKNOWN");
+  assert.equal(derived.value, "Unknown");
+  assert.equal(derived.evidenceIds.length, 0);
+});
+
+test("owner: structured data wins over a different name in action text", () => {
+  const matterId = "test-matter-owner-structured-wins";
+  const derived = deriveOwnerSlot(
+    [
+      makeOwnerEvent({
+        eventId: `${matterId}-resp`,
+        matterId,
+        eventType: "RESPONSIBILITY_RECORDED",
+        occurredAt: "2026-09-12T09:00:00Z",
+        actor: "Priya Nair",
+        action: "Noted that Rachel Morgan will help with coverage.",
+        object: null,
+        provenance: {
+          sourceArtifactId: `${matterId}-artifact-resp`,
+          sourceSystem: "Clio",
+          sourceRecordedAt: "2026-09-12T09:00:00Z",
+          associationMethod: "AUTHORITATIVE_SOURCE_RELATIONSHIP",
+          evidenceExcerpt: "coverage note",
+        },
+      }),
+    ],
+    matterId,
+    makeOwnerMatter(matterId, { responsibleAttorney: "Priya Nair" }),
+    [],
+    syntheticRequestingUser,
+    OWNER_AS_OF,
+  );
+
+  assert.equal(derived.state, "SUPPORTED");
+  assert.equal(derived.value, "Priya Nair");
+});
+
+test("owner: later responsibility event supersedes an earlier one", () => {
+  const matterId = "test-matter-owner-supersede";
+  const derived = deriveOwnerSlot(
+    [
+      makeOwnerEvent({
+        eventId: `${matterId}-earlier`,
+        matterId,
+        eventType: "RESPONSIBILITY_RECORDED",
+        occurredAt: "2026-08-01T09:00:00Z",
+        actor: "Alex Thompson",
+        action: "Opened the file.",
+        object: null,
+        provenance: {
+          sourceArtifactId: `${matterId}-artifact-earlier`,
+          sourceSystem: "Clio",
+          sourceRecordedAt: "2026-08-01T09:00:00Z",
+          associationMethod: "AUTHORITATIVE_SOURCE_RELATIONSHIP",
+          evidenceExcerpt: "opened the file",
+        },
+      }),
+      makeOwnerEvent({
+        eventId: `${matterId}-later`,
+        matterId,
+        eventType: "RESPONSIBILITY_RECORDED",
+        occurredAt: "2026-09-10T09:00:00Z",
+        actor: "Priya Nair",
+        action: "Took over coverage.",
+        object: null,
+        provenance: {
+          sourceArtifactId: `${matterId}-artifact-later`,
+          sourceSystem: "Clio",
+          sourceRecordedAt: "2026-09-10T09:00:00Z",
+          associationMethod: "AUTHORITATIVE_SOURCE_RELATIONSHIP",
+          evidenceExcerpt: "took over coverage",
+        },
+      }),
+    ],
+    matterId,
+    makeOwnerMatter(matterId, { responsibleAttorney: "Priya Nair" }),
+    [],
+    syntheticRequestingUser,
+    OWNER_AS_OF,
+  );
+
+  assert.equal(derived.state, "SUPPORTED");
+  assert.equal(derived.value, "Priya Nair");
+  assert.deepEqual(derived.evidenceIds, [`${matterId}-artifact-later`]);
+});
+
+test("owner: events after asOf are ignored", () => {
+  const matterId = "test-matter-owner-asof";
+  const derived = deriveOwnerSlot(
+    [
+      makeOwnerEvent({
+        eventId: `${matterId}-before`,
+        matterId,
+        eventType: "RESPONSIBILITY_RECORDED",
+        occurredAt: "2026-09-10T09:00:00Z",
+        actor: "Rachel Morgan",
+        action: "Opened the file.",
+        object: null,
+        provenance: {
+          sourceArtifactId: `${matterId}-artifact-before`,
+          sourceSystem: "Clio",
+          sourceRecordedAt: "2026-09-10T09:00:00Z",
+          associationMethod: "AUTHORITATIVE_SOURCE_RELATIONSHIP",
+          evidenceExcerpt: "opened the file",
+        },
+      }),
+      makeOwnerEvent({
+        eventId: `${matterId}-after`,
+        matterId,
+        eventType: "RESPONSIBILITY_RECORDED",
+        occurredAt: "2026-09-20T09:00:00Z",
+        actor: "Priya Nair",
+        action: "Took over coverage.",
+        object: null,
+        provenance: {
+          sourceArtifactId: `${matterId}-artifact-after`,
+          sourceSystem: "Clio",
+          sourceRecordedAt: "2026-09-20T09:00:00Z",
+          associationMethod: "AUTHORITATIVE_SOURCE_RELATIONSHIP",
+          evidenceExcerpt: "took over coverage",
+        },
+      }),
+    ],
+    matterId,
+    makeOwnerMatter(matterId, { responsibleAttorney: "Priya Nair" }),
+    [],
+    syntheticRequestingUser,
+    "2026-09-17T23:59:59Z",
+  );
+
+  assert.equal(derived.value, "Rachel Morgan");
+  assert.deepEqual(derived.evidenceIds, [`${matterId}-artifact-before`]);
+});
+
+test("owner: client actor is not treated as the matter owner", () => {
+  const matterId = "test-matter-owner-client";
+  const derived = deriveOwnerSlot(
+    [
+      makeOwnerEvent({
+        eventId: `${matterId}-resp`,
+        matterId,
+        eventType: "RESPONSIBILITY_RECORDED",
+        occurredAt: "2026-09-12T09:00:00Z",
+        actor: "Jordan Smith",
+        action: "Client confirmed they will review the draft.",
+        object: null,
+        provenance: {
+          sourceArtifactId: `${matterId}-artifact-resp`,
+          sourceSystem: "Outlook",
+          sourceRecordedAt: "2026-09-12T09:00:00Z",
+          associationMethod: "EXPLICIT_MATTER_ID",
+          evidenceExcerpt: "will review the draft",
+        },
+      }),
+    ],
+    matterId,
+    makeOwnerMatter(matterId),
+    [],
+    syntheticRequestingUser,
+    OWNER_AS_OF,
+  );
+
+  assert.equal(derived.state, "UNKNOWN");
+  assert.equal(derived.value, "Unknown");
+});
+
+test("owner: matter isolation ignores another matter's assignment", () => {
+  const matterId = "test-matter-owner-isolation";
+  const otherMatterId = "test-matter-owner-other";
+  const derived = deriveOwnerSlot(
+    [
+      makeOwnerEvent({
+        eventId: `${otherMatterId}-resp`,
+        matterId: otherMatterId,
+        eventType: "RESPONSIBILITY_RECORDED",
+        occurredAt: "2026-09-12T09:00:00Z",
+        actor: "Alex Thompson",
+        action: "Took over the other file.",
+        object: null,
+        provenance: {
+          sourceArtifactId: `${otherMatterId}-artifact-resp`,
+          sourceSystem: "Clio",
+          sourceRecordedAt: "2026-09-12T09:00:00Z",
+          associationMethod: "AUTHORITATIVE_SOURCE_RELATIONSHIP",
+          evidenceExcerpt: "took over",
+        },
+      }),
+    ],
+    matterId,
+    makeOwnerMatter(matterId),
+    [],
+    syntheticRequestingUser,
+    OWNER_AS_OF,
+  );
+
+  assert.equal(derived.state, "UNKNOWN");
+  assert.equal(derived.value, "Unknown");
+  assert.equal(derived.evidenceIds.length, 0);
+});
+
+test("owner: invalid asOf is UNKNOWN", () => {
+  const matterId = "test-matter-owner-invalid-asof";
+  const events = [
+    makeOwnerEvent({
+      eventId: `${matterId}-resp`,
+      matterId,
+      eventType: "RESPONSIBILITY_RECORDED",
+      occurredAt: "2026-09-12T09:00:00Z",
+      actor: "Alex Thompson",
+      action: "Opened the file.",
+      object: null,
+      provenance: {
+        sourceArtifactId: `${matterId}-artifact-resp`,
+        sourceSystem: "Clio",
+        sourceRecordedAt: "2026-09-12T09:00:00Z",
+        associationMethod: "AUTHORITATIVE_SOURCE_RELATIONSHIP",
+        evidenceExcerpt: "opened the file",
+      },
+    }),
+  ];
+  const derived = deriveOwnerSlot(
+    events,
+    matterId,
+    makeOwnerMatter(matterId),
+    [],
+    syntheticRequestingUser,
+    "not-a-date",
+  );
+
+  assert.equal(derived.state, "UNKNOWN");
+  assert.equal(derived.value, "Unknown");
+});
+
+test("owner: mutation removing responsibility events breaks the ground-truth match", () => {
+  const withoutResponsibility = extractedEvents.filter(
+    (event) => event.eventType !== "RESPONSIBILITY_RECORDED",
+  );
+  const derived = deriveOwnerSlot(
+    withoutResponsibility,
+    syntheticMatters[0].id,
+    syntheticMatters[0],
+    evidenceProcessing.eligibleEvidence,
+    syntheticRequestingUser,
+    syntheticCurrentStateGroundTruth.asOf,
+  );
+  const expectation = syntheticCurrentStateGroundTruth.expectations.find(
+    (exp) => exp.slotId === "owner",
+  );
+
+  assert.ok(expectation);
+  assert.notEqual(derived.value, expectation.expectedValue);
+  assert.equal(derived.state, "UNKNOWN");
+});
+
+test("owner: email from a known own-side person is structured SUPPORTED", () => {
+  const matterId = "test-matter-owner-email";
+  const artifactId = `${matterId}-artifact-resp`;
+  const testEvidence: EligibleEvidenceItem[] = [
+    makeEmailEvidence({
+      id: artifactId,
+      from: "priya.nair@lawfirm.example",
+      to: ["jordan.smith@example.com"],
+      timestamp: "2026-09-12T09:00:00Z",
+    }),
+  ];
+  const derived = deriveOwnerSlot(
+    [
+      makeOwnerEvent({
+        eventId: `${matterId}-resp`,
+        matterId,
+        eventType: "RESPONSIBILITY_RECORDED",
+        occurredAt: "2026-09-12T09:00:00Z",
+        actor: null,
+        action: "Logged a coverage note on the file.",
+        object: null,
+        provenance: {
+          sourceArtifactId: artifactId,
+          sourceSystem: "Outlook",
+          sourceRecordedAt: "2026-09-12T09:00:00Z",
+          associationMethod: "EXPLICIT_MATTER_ID",
+          evidenceExcerpt: "coverage note",
+        },
+      }),
+    ],
+    matterId,
+    makeOwnerMatter(matterId, { responsibleAttorney: "Priya Nair" }),
+    testEvidence,
+    syntheticRequestingUser,
+    OWNER_AS_OF,
+  );
+
+  assert.equal(derived.state, "SUPPORTED");
+  assert.equal(derived.value, "Priya Nair");
+});
+
+test("owner: role label does not stand in for a person named only in the event", () => {
+  const matterId = "test-matter-owner-role-not-proxy";
+  const derived = deriveOwnerSlot(
+    [
+      makeOwnerEvent({
+        eventId: `${matterId}-resp`,
+        matterId,
+        eventType: "RESPONSIBILITY_RECORDED",
+        occurredAt: "2026-09-12T09:00:00Z",
+        actor: null,
+        action: "Recorded Jamie Lee as the responsible attorney.",
+        object: "Responsible attorney",
+        provenance: {
+          sourceArtifactId: `${matterId}-artifact-resp`,
+          sourceSystem: "Clio",
+          sourceRecordedAt: "2026-09-12T09:00:00Z",
+          associationMethod: "AUTHORITATIVE_SOURCE_RELATIONSHIP",
+          evidenceExcerpt: "responsible attorney",
+        },
+      }),
+    ],
+    matterId,
+    makeOwnerMatter(matterId, { responsibleAttorney: "Alex Thompson" }),
+    [],
+    syntheticRequestingUser,
+    OWNER_AS_OF,
+  );
+
+  assert.notEqual(derived.value, "Alex Thompson");
+  assert.notEqual(derived.state, "SUPPORTED");
+  assert.equal(derived.state, "UNKNOWN");
+  assert.equal(derived.value, "Unknown");
+});
+
+test("owner: unrecognized actor or object labels are UNKNOWN", () => {
+  const labels = [
+    "Dana Price",
+    "Judge Lee",
+    "Jordan Smithson",
+    "Al Thompson",
+    "Alex",
+    "Discovery responses",
+    "Matter",
+  ];
+  const matterId = "test-matter-owner-unrecognized-labels";
+  const testMatter = makeOwnerMatter(matterId, {
+    responsibleAttorney: "Alex Thompson",
+  });
+
+  for (const label of labels) {
+    for (const field of ["actor", "object"] as const) {
+      const derived = deriveOwnerSlot(
+        [
+          makeOwnerEvent({
+            eventId: `${matterId}-${field}-${label}`,
+            matterId,
+            eventType: "RESPONSIBILITY_RECORDED",
+            occurredAt: "2026-09-12T09:00:00Z",
+            actor: field === "actor" ? label : null,
+            action: "Updated the assignment on the matter record.",
+            object: field === "object" ? label : null,
+            provenance: {
+              sourceArtifactId: `${matterId}-artifact-${field}`,
+              sourceSystem: "Clio",
+              sourceRecordedAt: "2026-09-12T09:00:00Z",
+              associationMethod: "AUTHORITATIVE_SOURCE_RELATIONSHIP",
+              evidenceExcerpt: "assignment updated",
+            },
+          }),
+        ],
+        matterId,
+        testMatter,
+        [],
+        syntheticRequestingUser,
+        OWNER_AS_OF,
+      );
+
+      assert.equal(
+        derived.state,
+        "UNKNOWN",
+        `${JSON.stringify(label)} as ${field} must be UNKNOWN, got ${derived.state} / ${derived.value}`,
+      );
+      assert.equal(
+        derived.value,
+        "Unknown",
+        `${JSON.stringify(label)} as ${field} must not become a SUPPORTED owner`,
+      );
+    }
+  }
+});
+
+test("owner: replacing/from/to text does not keep the outgoing owner", () => {
+  const matterId = "test-matter-owner-transfer-text";
+  const testMatter = makeOwnerMatter(matterId, {
+    responsibleAttorney: "Alex Thompson",
+  });
+  const sentences = [
+    "Recorded Jamie Lee as the responsible attorney, replacing Alex Thompson.",
+    "Transferred from Alex Thompson to Jamie Lee.",
+  ];
+
+  for (const action of sentences) {
+    const derived = deriveOwnerSlot(
+      [
+        makeOwnerEvent({
+          eventId: `${matterId}-${action.length}`,
+          matterId,
+          eventType: "RESPONSIBILITY_RECORDED",
+          occurredAt: "2026-09-12T09:00:00Z",
+          actor: null,
+          action,
+          object: null,
+          provenance: {
+            sourceArtifactId: `${matterId}-artifact-text`,
+            sourceSystem: "Outlook",
+            sourceRecordedAt: "2026-09-12T09:00:00Z",
+            associationMethod: "EXPLICIT_MATTER_ID",
+            evidenceExcerpt: "coverage change",
+          },
+        }),
+      ],
+      matterId,
+      testMatter,
+      [],
+      syntheticRequestingUser,
+      OWNER_AS_OF,
+    );
+
+    assert.notEqual(
+      derived.value,
+      "Alex Thompson",
+      `${JSON.stringify(action)} must not keep the outgoing owner`,
+    );
+    assert.equal(
+      derived.state,
+      "UNKNOWN",
+      `${JSON.stringify(action)} is ambiguous when the incoming owner is not a known firm-side identity`,
+    );
+    assert.equal(derived.value, "Unknown");
+  }
+});
+
+function deriveOwnerFromAction(
+  matterId: string,
+  action: string,
+  object: string | null = null,
+): ReturnType<typeof deriveOwnerSlot> {
+  return deriveOwnerSlot(
+    [
+      makeOwnerEvent({
+        eventId: `${matterId}-resp`,
+        matterId,
+        eventType: "RESPONSIBILITY_RECORDED",
+        occurredAt: "2026-09-12T09:00:00Z",
+        actor: null,
+        action,
+        object,
+        provenance: {
+          sourceArtifactId: `${matterId}-artifact-resp`,
+          sourceSystem: "Clio",
+          sourceRecordedAt: "2026-09-12T09:00:00Z",
+          associationMethod: "AUTHORITATIVE_SOURCE_RELATIONSHIP",
+          evidenceExcerpt: "assignment",
+        },
+      }),
+    ],
+    matterId,
+    makeOwnerMatter(matterId),
+    [],
+    syntheticRequestingUser,
+    OWNER_AS_OF,
+  );
+}
+
+test("owner: passive replaced-by yields the incoming owner", () => {
+  const knownIncoming = deriveOwnerFromAction(
+    "test-matter-owner-passive-known",
+    "Alex Thompson was replaced by Rachel Morgan.",
+    "Responsible attorney",
+  );
+  assert.equal(knownIncoming.value, "Rachel Morgan");
+  assert.notEqual(knownIncoming.value, "Alex Thompson");
+
+  const unknownIncoming = deriveOwnerFromAction(
+    "test-matter-owner-passive-unknown",
+    "Alex Thompson was replaced by Jamie Lee.",
+    "Responsible attorney",
+  );
+  assert.equal(unknownIncoming.state, "UNKNOWN");
+  assert.equal(unknownIncoming.value, "Unknown");
+  assert.notEqual(unknownIncoming.value, "Alex Thompson");
+});
+
+test("owner: bare from with no incoming owner is UNKNOWN", () => {
+  const derived = deriveOwnerFromAction(
+    "test-matter-owner-bare-from",
+    "Reassigned from Alex Thompson.",
+    "Responsible attorney",
+  );
+  assert.equal(derived.state, "UNKNOWN");
+  assert.equal(derived.value, "Unknown");
+  assert.notEqual(derived.value, "Alex Thompson");
+});
+
+test("owner: removed with no incoming owner is UNKNOWN", () => {
+  const derived = deriveOwnerFromAction(
+    "test-matter-owner-removed",
+    "Removed Alex Thompson as responsible attorney.",
+    "Responsible attorney",
+  );
+  assert.equal(derived.state, "UNKNOWN");
+  assert.equal(derived.value, "Unknown");
+  assert.notEqual(derived.value, "Alex Thompson");
+});
+
+test("owner: former with no incoming owner is UNKNOWN", () => {
+  const derived = deriveOwnerFromAction(
+    "test-matter-owner-former",
+    "Recorded Alex Thompson as the former responsible attorney.",
+    "Responsible attorney",
+  );
+  assert.equal(derived.state, "UNKNOWN");
+  assert.equal(derived.value, "Unknown");
+  assert.notEqual(derived.value, "Alex Thompson");
+});
+
+test("owner: first mentioned known name does not win a transfer", () => {
+  const derived = deriveOwnerFromAction(
+    "test-matter-owner-first-name-wins",
+    "Transferred from Alex Thompson to Rachel Morgan.",
+    "Responsible attorney",
+  );
+  assert.equal(derived.value, "Rachel Morgan");
+  assert.notEqual(
+    derived.value,
+    "Alex Thompson",
+    "Outgoing name appears first; returning it means first-mentioned wins",
+  );
+});
+
+test("owner: departure wording without a positive assignment is UNKNOWN", () => {
+  const phrasings = [
+    "Alex Thompson is no longer the responsible attorney.",
+    "Alex Thompson stepped down as responsible attorney.",
+    "Alex Thompson withdrew as counsel.",
+    "Alex Thompson left the firm.",
+    "Alex Thompson is the outgoing responsible attorney.",
+    "Prior responsible attorney: Alex Thompson.",
+    "Ex-attorney Alex Thompson.",
+  ];
+
+  for (const action of phrasings) {
+    const derived = deriveOwnerFromAction(
+      `test-matter-owner-departure-${action.length}`,
+      action,
+      "Responsible attorney",
+    );
+    assert.equal(
+      derived.state,
+      "UNKNOWN",
+      `${JSON.stringify(action)} must not treat a departure as an assignment`,
+    );
+    assert.equal(derived.value, "Unknown");
+    assert.notEqual(derived.value, "Alex Thompson");
+  }
+});
+
+test("owner: lone name with no assignment verb is UNKNOWN", () => {
+  const derived = deriveOwnerFromAction(
+    "test-matter-owner-lone-name",
+    "Discussed the file with Alex Thompson.",
+    "Responsible attorney",
+  );
+  assert.equal(derived.state, "UNKNOWN");
+  assert.equal(derived.value, "Unknown");
+  assert.notEqual(derived.value, "Alex Thompson");
 });
