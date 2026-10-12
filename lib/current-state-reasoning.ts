@@ -1217,39 +1217,39 @@ function isExcludedOwnerLabel(label: string, matter: SyntheticMatter): boolean {
   );
 }
 
+function isResponsibilityRoleLabel(label: string | null): boolean {
+  if (!label) return false;
+  return ATTORNEY_OWNER_ROLE_LABELS.has(normalizedActorLabel(label));
+}
+
+function firmSideIdentities(
+  matter: SyntheticMatter,
+  requestingUser: SyntheticUser
+): string[] {
+  return [matter.responsibleAttorney, requestingUser.name]
+    .map((name) => name.trim())
+    .filter((name) => name.length > 0 && !actorEqualsName(name, matter.client))
+    .sort((left, right) => right.length - left.length);
+}
+
 /**
- * Resolve a structured actor/object label to a named own-side person.
- * Role labels that uniquely identify the responsible attorney map to
- * matter.responsibleAttorney. Personal names keep their original casing
- * unless they match a known identity, in which case the canonical name
- * is used. Client, court, and opposing-counsel labels are not owners.
+ * Exact match against known firm-side identities only. Role labels and
+ * unrecognized names are not owners.
  */
-function resolveNamedOwnSidePerson(
+function matchFirmSideIdentity(
   label: string | null,
   matter: SyntheticMatter,
   requestingUser: SyntheticUser
 ): string | null {
   if (!label) return null;
-  const normalized = normalizedActorLabel(label);
-  if (!normalized) return null;
+  if (!normalizedActorLabel(label)) return null;
   if (isExcludedOwnerLabel(label, matter)) return null;
-
-  if (actorEqualsName(label, matter.responsibleAttorney)) {
-    return matter.responsibleAttorney;
+  for (const name of firmSideIdentities(matter, requestingUser)) {
+    if (actorEqualsName(label, name)) {
+      return name;
+    }
   }
-  if (actorEqualsName(label, requestingUser.name)) {
-    return requestingUser.name;
-  }
-
-  if (ATTORNEY_OWNER_ROLE_LABELS.has(normalized)) {
-    return matter.responsibleAttorney.trim() ? matter.responsibleAttorney : null;
-  }
-
-  if (OWN_SIDE_ROLE_LABELS.has(normalized)) {
-    return null;
-  }
-
-  return label;
+  return null;
 }
 
 function resolveOwnerFromArtifact(
@@ -1277,40 +1277,86 @@ function actionMentionsPerson(action: string, personName: string): boolean {
   return new RegExp(`\\b${escaped}\\b`, "i").test(action);
 }
 
+function mentionedFirmSideIdentities(
+  text: string,
+  matter: SyntheticMatter,
+  requestingUser: SyntheticUser
+): string[] {
+  return firmSideIdentities(matter, requestingUser).filter((name) =>
+    actionMentionsPerson(text, name)
+  );
+}
+
+function actionHasTransferLanguage(action: string): boolean {
+  return (
+    /\breplac(?:ing|ed)\b/i.test(action) || /\bfrom\b[\s\S]+\bto\b/i.test(action)
+  );
+}
+
 /**
- * Text fallback: match known own-side identities in action text.
- * Does not extract arbitrary names from phrasing.
+ * Drop outgoing-owner clauses so "replacing X" / "from X to Y" do not
+ * treat X as the current owner.
+ */
+function stripOutgoingOwnerPhrases(action: string): string {
+  return action
+    .replace(/\breplacing\s+[^,.]+/gi, " ")
+    .replace(/\breplaced\s+by\s+[^,.]+/gi, " ")
+    .replace(/\bfrom\s+[^,.]+?\s+(?=to\b)/gi, "");
+}
+
+/**
+ * Text fallback: match known firm-side identities in action text.
+ * Transfer language (replacing / from…to) prefers the incoming owner.
+ * Ambiguous or unknown incoming owners yield null.
  */
 function inferOwnerFromActionText(
   action: string,
   matter: SyntheticMatter,
   requestingUser: SyntheticUser
 ): string | null {
-  const candidates = [matter.responsibleAttorney, requestingUser.name]
-    .map((name) => name.trim())
-    .filter((name) => name.length > 0 && !actorEqualsName(name, matter.client))
-    .sort((left, right) => right.length - left.length);
-
-  for (const name of candidates) {
-    if (actionMentionsPerson(action, name)) {
-      return name;
-    }
+  const searchText = actionHasTransferLanguage(action)
+    ? stripOutgoingOwnerPhrases(action)
+    : action;
+  const mentioned = mentionedFirmSideIdentities(
+    searchText,
+    matter,
+    requestingUser
+  );
+  if (mentioned.length === 1) {
+    return mentioned[0];
   }
   return null;
+}
+
+function ownerClaim(
+  value: string,
+  state: "SUPPORTED" | "INFERRED",
+  evidenceId: string
+): StatusClaim {
+  return {
+    id: "owner",
+    label: "Owner",
+    value,
+    state,
+    evidenceIds: [evidenceId],
+  };
 }
 
 /**
  * Derives the owner slot from operational events.
  *
  * Structured data first: the latest RESPONSIBILITY_RECORDED event at or
- * before asOf. Actor and object are resolved through own-side identity
- * (responsible attorney, requesting user, attorney role labels). Email
- * local-part matching is used when the source artifact identifies a
- * known person. Text is an INFERRED fallback that only matches those
- * known identities. UNKNOWN when the evidence does not support an owner.
+ * before asOf. Actor and object must themselves be known firm-side
+ * identities (responsible attorney or requesting user). A role label
+ * such as "Responsible attorney" is not the person. Email local-part
+ * matching is used when the source artifact identifies a known person.
+ * Text is an INFERRED fallback that only matches those known identities,
+ * with replacing/from/to treated as a transfer. UNKNOWN when the
+ * evidence does not support an owner.
  *
- * Deterministic: uses event timestamps (compareEventsByTime / getLatestEvent),
- * structured identity helpers, and an explicit asOf. No fixture wording.
+ * Smith v. Acme is SUPPORTED because the event action names Alex
+ * Thompson, a known firm-side identity, on a responsibility recording —
+ * not because the role object is mapped onto matter.responsibleAttorney.
  */
 export function deriveOwnerSlot(
   events: OperationalEvent[],
@@ -1340,35 +1386,31 @@ export function deriveOwnerSlot(
   const artifact = eligibleEvidence.find(
     (item) => item.id === latest.provenance.sourceArtifactId
   );
+  const evidenceId = latest.provenance.sourceArtifactId;
 
   const structuredOwner =
-    resolveNamedOwnSidePerson(latest.actor, matter, requestingUser) ??
-    resolveNamedOwnSidePerson(latest.object, matter, requestingUser) ??
+    matchFirmSideIdentity(latest.actor, matter, requestingUser) ??
+    matchFirmSideIdentity(latest.object, matter, requestingUser) ??
     resolveOwnerFromArtifact(artifact, matter, requestingUser);
 
   if (structuredOwner) {
-    return {
-      id: "owner",
-      label: "Owner",
-      value: structuredOwner,
-      state: "SUPPORTED",
-      evidenceIds: [latest.provenance.sourceArtifactId],
-    };
+    return ownerClaim(structuredOwner, "SUPPORTED", evidenceId);
   }
 
-  const inferredOwner = inferOwnerFromActionText(
+  const textOwner = inferOwnerFromActionText(
     latest.action,
     matter,
     requestingUser
   );
-  if (inferredOwner) {
-    return {
-      id: "owner",
-      label: "Owner",
-      value: inferredOwner,
-      state: "INFERRED",
-      evidenceIds: [latest.provenance.sourceArtifactId],
-    };
+  if (textOwner) {
+    const recordedAsResponsibility =
+      isResponsibilityRoleLabel(latest.object) ||
+      isResponsibilityRoleLabel(latest.actor);
+    return ownerClaim(
+      textOwner,
+      recordedAsResponsibility ? "SUPPORTED" : "INFERRED",
+      evidenceId
+    );
   }
 
   return unknownOwner();
