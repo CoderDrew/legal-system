@@ -6059,3 +6059,82 @@ test("important-date: place status words and ALL-CAPS are UNKNOWN", () => {
     assert.notEqual(derived.value, "November 20, 2026");
   }
 });
+
+test("important-date: room token without a digit or extra place word is UNKNOWN", () => {
+  const cases = [
+    "Hearing set for 2026-10-15 in Room Cancelled",
+    "Hearing set for 2026-10-15 in Courtroom Vacated",
+    "Hearing set for 2026-10-15 in Dept CANCELLED",
+    "Hearing set for 2026-10-15 in Denver Superseded",
+    "Hearing set for 2026-10-15 in Denver Rescinded",
+    "Hearing set for 2026-10-15 in Denver Pending",
+    "Hearing set for 2026-10-15 in Denver Abated",
+    "Hearing set for 2026-10-15 in New York",
+  ];
+
+  for (const action of cases) {
+    const matterId = `test-matter-date-place-digit-${action.length}`;
+    const derived = deriveImportantDateSlot(
+      [
+        scheduleStatusEvent({
+          matterId,
+          eventId: `${matterId}-schedule`,
+          occurredAt: "2026-09-12T09:00:00Z",
+          sourceRecordedAt: "2026-09-12T09:00:00Z",
+          action,
+          object: "Hearing",
+        }),
+      ],
+      matterId,
+      IMPORTANT_DATE_AS_OF,
+    );
+    assert.equal(
+      derived.state,
+      "UNKNOWN",
+      `${JSON.stringify(action)} must be UNKNOWN, got ${derived.state} / ${derived.value}`,
+    );
+    assert.equal(derived.value, "Unknown");
+    assert.notEqual(derived.value, "October 15, 2026");
+  }
+});
+
+test("important-date: courtroom id with a digit or a single city still resolves", () => {
+  const cases: Array<{ action: string; expected: string }> = [
+    {
+      action: "Hearing set for Oct 15, 2026 in Courtroom 3.",
+      expected: "October 15, 2026",
+    },
+    {
+      action: "Hearing set for Oct 15, 2026 in Room 4B.",
+      expected: "October 15, 2026",
+    },
+    {
+      action: "Hearing set for Oct 15, 2026 in Denver.",
+      expected: "October 15, 2026",
+    },
+  ];
+
+  for (const { action, expected } of cases) {
+    const matterId = `test-matter-date-place-ok-${action.length}`;
+    const derived = deriveImportantDateSlot(
+      [
+        scheduleStatusEvent({
+          matterId,
+          eventId: `${matterId}-schedule`,
+          occurredAt: "2026-09-12T09:00:00Z",
+          sourceRecordedAt: "2026-09-12T09:00:00Z",
+          action,
+          object: "Hearing",
+        }),
+      ],
+      matterId,
+      IMPORTANT_DATE_AS_OF,
+    );
+    assert.equal(
+      derived.value,
+      expected,
+      `${JSON.stringify(action)} must yield ${expected}, got ${derived.value}`,
+    );
+    assert.equal(derived.state, "INFERRED");
+  }
+});

@@ -1707,11 +1707,14 @@ function schedulePlaceWordPattern(): string {
   return `(?!(?:${stems}))[A-Z][a-z]+(?:['-][A-Za-z]+)*`;
 }
 
+function scheduleRoomNumberPattern(): string {
+  return "(?:[0-9][0-9A-Za-z-]*|[A-Za-z]?[0-9]+[A-Za-z]?)";
+}
+
 function schedulePlacePattern(): string {
-  const room = `(?:(?:${["Courtroom", "Room", "Dept", "Department"].map(caseInsensitiveToken).join("|")})\\.?\\s+[A-Za-z0-9]+)`;
+  const room = `(?:(?:${["Courtroom", "Room", "Dept", "Department"].map(caseInsensitiveToken).join("|")})\\.?\\s+${scheduleRoomNumberPattern()})`;
   const word = schedulePlaceWordPattern();
-  const proper = `${word}(?:\\s+${word})?`;
-  return `(?:${room}|${proper})`;
+  return `(?:${room}|${word})`;
 }
 
 function scheduleTimePattern(): string {
