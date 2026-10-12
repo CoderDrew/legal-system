@@ -1645,142 +1645,87 @@ function datesEqual(left: CalendarDate, right: CalendarDate): boolean {
   );
 }
 
-function clauseAround(text: string, index: number): string {
-  const start = Math.max(
-    text.lastIndexOf(".", index - 1),
-    text.lastIndexOf(";", index - 1)
-  );
-  const from = start + 1;
-  const after = text.slice(index);
-  const relEnd = after.search(/[.;]/);
-  const end = relEnd === -1 ? text.length : index + relEnd;
-  return text.slice(from, end);
+function caseInsensitiveToken(word: string): string {
+  return word.replace(/[A-Za-z]/g, (ch) => `[${ch.toUpperCase()}${ch.toLowerCase()}]`);
+}
+
+function caseInsensitivePhrase(phrase: string): string {
+  return phrase.split(/\s+/).map(caseInsensitiveToken).join("\\s+");
 }
 
 function calendarDateTokenPattern(): string {
-  const monthNames = Object.keys(MONTH_INDEX).join("|");
+  const monthNames = Object.keys(MONTH_INDEX)
+    .map(caseInsensitiveToken)
+    .join("|");
   return `(?:\\d{4}-\\d{2}-\\d{2}|(?:${monthNames})\\s+\\d{1,2}(?:st|nd|rd|th)?,?\\s+\\d{4}|\\d{1,2}/\\d{1,2}/\\d{4})`;
 }
 
-/**
- * After the date, only an optional time, optional place, and
- * punctuation may follow. Anything else means the date is not current.
- */
-function allowedScheduleAfterDatePattern(): string {
-  const time = `(?:\\s+at\\s+\\d{1,2}(?::\\d{2})?(?:\\s*(?:a\\.?m\\.?|p\\.?m\\.?))?)?`;
-  const place = `(?:\\s+(?:in|at)\\s+(?!\\d)(?:the\\s+)?[A-Za-z][\\w'-]*(?:\\s+[A-Za-z0-9][\\w'-]*){0,4})?`;
+function scheduleSubjectPattern(): string {
+  const head = [
+    "Motion hearing",
+    "Status conference",
+    "Hearing",
+    "Trial",
+    "Deposition",
+    "Mediation",
+    "Conference",
+    "Deadline",
+    "Response",
+    "Filing",
+  ]
+    .map(caseInsensitivePhrase)
+    .join("|");
+  const ofName =
+    "(?:\\s+[Oo][Ff]\\s+[A-Z][A-Za-z'-]*(?:\\s+[A-Z][A-Za-z'-]*){0,2})?";
+  return `(?:${head}${ofName})`;
+}
+
+function schedulePlacePattern(): string {
+  const room = `(?:(?:${["Courtroom", "Room", "Dept", "Department"].map(caseInsensitiveToken).join("|")})\\.?\\s+[A-Za-z0-9]+)`;
+  const proper = "[A-Z][A-Za-z'-]*(?:\\s+[A-Z][A-Za-z'-]*){0,2}";
+  return `(?:${room}|${proper})`;
+}
+
+function scheduleTimePattern(): string {
+  return "(?:\\d{1,2}(?::\\d{2})?\\s*[AaPp]\\.?[Mm]\\.?)";
+}
+
+function scheduleAfterDatePattern(): string {
+  const time = `(?:\\s+[Aa][Tt]\\s+${scheduleTimePattern()})?`;
+  const place = `(?:\\s+(?:[Ii][Nn]|[Aa][Tt])\\s+${schedulePlacePattern()})?`;
   return `${time}${place}`;
 }
 
-/**
- * Text before the scheduling form may only be a reporting wrapper plus
- * a plain event subject (Hearing, Trial, Deposition of X, Motion
- * hearing, Brief, Respond to … order). Any other prefix is UNKNOWN.
- */
-function isPlainScheduleSubject(prefix: string): boolean {
-  let text = normalizedStatement(prefix);
-  text = text.replace(/^(?:reported|noted|recorded)\s+that\s+/i, "").trim();
-  if (!text) return true;
-  if (/^respond\s+to\b[\s\S]+\border$/i.test(text)) return true;
-  return /^(?:the\s+)?(?:(?:motion|settlement)\s+)?(?:hearing|trial|conference|deposition|brief|filing|deadline|motion|order)(?:\s+hearing)?(?:\s+of\s+[A-Za-z][\w\s'-]*)?(?:\s+is)?$/i.test(
-    text
-  );
+function hasForbiddenScheduleWords(text: string): boolean {
+  return /\b(?:not|never|no|will|be|who|which|that)\b/i.test(text);
 }
 
-function hasContinuanceVerb(text: string): boolean {
-  return /\b(?:continued|moved|rescheduled)\b/i.test(text);
+function statementHasMultipleSentences(text: string): boolean {
+  if (splitScheduleSentences(text).length !== 1) return true;
+  const withoutFinalStop = text.trim().replace(/[.?!]+$/, "");
+  return /[.?!]/.test(withoutFinalStop);
 }
 
-function continuanceToFormPattern(): string {
-  return `(?:\\bwas\\s+)?\\b(?:continued|moved|rescheduled)(?:\\s+from\\s+${calendarDateTokenPattern()})?\\s+to`;
-}
-
-function setForFormPattern(): string {
-  return `\\b(?:set\\s+for|scheduled\\s+for|due(?:\\s+on)?|by)`;
-}
-
-/**
- * continued/moved/rescheduled to counts only when a calendar date
- * directly follows "to". Otherwise the statement is UNKNOWN and no
- * earlier date is used.
- */
-function statementHasUnresolvedContinuance(text: string): boolean {
-  const date = calendarDateTokenPattern();
-  const re = new RegExp(
-    `\\b(?:continued|moved|rescheduled)(?:\\s+from\\s+${date})?\\s+to\\b`,
-    "gi"
-  );
-  for (const match of text.matchAll(re)) {
-    if (match.index === undefined) continue;
-    const after = text.slice(match.index + match[0].length).trimStart();
-    if (!new RegExp(`^${date}`, "i").test(after)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-function matchAnchoredScheduleDate(
-  statement: string,
-  formPattern: string
-): CalendarDate | null {
-  const date = calendarDateTokenPattern();
-  const after = allowedScheduleAfterDatePattern();
-  const match = statement.match(
-    new RegExp(`^(.*?)${formPattern}\\s+(${date})${after}$`, "i")
-  );
-  if (!match) return null;
-  if (!isPlainScheduleSubject(match[1])) return null;
-  return parseCompleteCalendarDate(match[2]);
-}
-
-function matchSentenceScheduleDate(sentence: string): CalendarDate | null {
-  if (hasContinuanceVerb(sentence)) {
-    return matchAnchoredScheduleDate(sentence, continuanceToFormPattern());
-  }
-  return matchAnchoredScheduleDate(sentence, setForFormPattern());
-}
-
-/**
- * Each period-separated sentence must be a clean schedule: plain
- * subject, then a form, then a date, then only time/place/punctuation.
- * An unresolved continuance anywhere makes the whole statement UNKNOWN.
- */
-function inferCleanScheduleDate(text: string): CalendarDate | null {
-  const statement = normalizedStatement(text);
-  if (!statement) return null;
-  if (statementHasUnresolvedContinuance(statement)) {
-    return null;
-  }
-  const sentences = statement
-    .split(/\.(?:\s+|$)/)
+function splitScheduleSentences(text: string): string[] {
+  return text
+    .trim()
+    .split(/(?<=\S)\.(?:\s+|$)/)
     .map((sentence) => sentence.trim())
     .filter((sentence) => sentence.length > 0);
-  const found: CalendarDate[] = [];
-  for (const sentence of sentences) {
-    const date = matchSentenceScheduleDate(sentence);
-    if (date) found.push(date);
-  }
-  const unique = found.filter(
+}
+
+function hasUniqueScheduleResult(dates: CalendarDate[]): boolean {
+  const unique = dates.filter(
     (date, index, all) =>
       all.findIndex((other) => datesEqual(other, date)) === index
   );
-  return unique.length === 1 ? unique[0] : null;
+  return unique.length === 1;
 }
 
-/**
- * A date counts only as the target of a positive scheduling form:
- * set for, scheduled for, due, by, or continued/moved/rescheduled to.
- * Bare "to" is not a destination. The date must follow the form
- * immediately.
- */
-function isPositiveSchedulingTarget(
-  text: string,
-  date: CalendarDateMatch
-): boolean {
+function isScheduleTargetDate(text: string, date: CalendarDateMatch): boolean {
   const before = text.slice(0, date.index);
   if (
-    /(?:\bset\s+for|\bscheduled\s+for|\bdue(?:\s+on)?|\bby)\s+$/i.test(before)
+    /(?:\bset\s+for|\bscheduled\s+for|\bdue\s+by|\bdue|\bby)\s+$/i.test(before)
   ) {
     return true;
   }
@@ -1790,67 +1735,69 @@ function isPositiveSchedulingTarget(
   ).test(before);
 }
 
-function clauseHasScheduleDisqualifier(clause: string): boolean {
-  const withoutContinuanceDestination = clause
-    .replace(/\bwas\s+(?:continued|moved|rescheduled)\b/gi, "")
-    .replace(/\b(?:continued|moved|rescheduled)\s+(?:from|to)\b/gi, "");
-  return /(?:\b(?:cancel(?:led|ed)?|vacate(?:d)?|withdrawn|previously|originally|formerly|was|postponed|adjourned|stricken|continued|dropped|mooted)\b|\boff(?:\s+the)?\s+calendar\b|\bwithout\s+date\b|\bcalled\s+off\b|\bno\s+longer\b)/i.test(
-    withoutContinuanceDestination
+function allScheduleTargetDates(text: string): CalendarDate[] {
+  return findCalendarDatesInText(text).filter((date) =>
+    isScheduleTargetDate(text, date)
   );
 }
 
+function matchWholeTextScheduleTemplate(text: string): CalendarDate | null {
+  const date = calendarDateTokenPattern();
+  const after = scheduleAfterDatePattern();
+  const subject = `(?:${scheduleSubjectPattern()}\\s+)?`;
+  const setForm = `(?:${["set for", "scheduled for", "due by", "due", "by"].map(caseInsensitivePhrase).join("|")})`;
+  const continuance = `(?:${["continued", "moved", "rescheduled"].map(caseInsensitiveToken).join("|")})(?:\\s+${caseInsensitiveToken("from")}\\s+${date})?\\s+${caseInsensitiveToken("to")}`;
+  const setMatch = text
+    .trim()
+    .match(new RegExp(`^${subject}${setForm}\\s+(${date})${after}\\.?$`));
+  if (setMatch) {
+    return parseCompleteCalendarDate(setMatch[1]);
+  }
+  const continued = text
+    .trim()
+    .match(new RegExp(`^${subject}${continuance}\\s+(${date})${after}\\.?$`));
+  if (continued) {
+    return parseCompleteCalendarDate(continued[1]);
+  }
+  return null;
+}
+
+function pickUniqueScheduleDate(
+  matched: CalendarDate | null,
+  targets: CalendarDate[]
+): CalendarDate | null {
+  if (!hasUniqueScheduleResult(targets)) return null;
+  return matched;
+}
+
 /**
- * Qualifiers attached to this date — TBD anywhere in the statement,
- * from/was/previously immediately before it, vacated shortly before it,
- * cancel/vacate/withdrawn/off calendar/without date/previously/
- * originally/was in its clause, or cancel immediately after — mean it
- * is not a current target.
+ * Text fallback: the whole trimmed event text must match one schedule
+ * template. Anything else is UNKNOWN.
+ *
+ *   SUBJECT (set for|scheduled for|due|due by|by) DATE [at TIME] [in|at PLACE] [.]
+ *   SUBJECT (continued|moved|rescheduled) [from DATE] to DATE [at TIME] [in|at PLACE] [.]
  */
-function dateHasDisqualifyingAttachment(
-  text: string,
-  date: CalendarDateMatch
-): boolean {
-  if (/\btbd\b/i.test(text)) {
-    return true;
-  }
-  const before = text.slice(0, date.index);
-  const after = text.slice(date.index + date.length);
-  if (/\b(?:from|was|previously)\s+$/i.test(before)) {
-    return true;
-  }
-  if (/\bvacated\b[\s\S]{0,40}$/i.test(before)) {
-    return true;
-  }
-  if (clauseHasScheduleDisqualifier(clauseAround(text, date.index))) {
-    return true;
-  }
-  return /^\s*[,).]?\s*(?:cancelled|canceled|cancel|vacated|vacate)\b/i.test(
-    after
+function inferStrictScheduleDate(text: string): CalendarDate | null {
+  const statement = text.trim();
+  if (!statement) return null;
+  if (hasForbiddenScheduleWords(statement)) return null;
+  if (statementHasMultipleSentences(statement)) return null;
+  const sentence = splitScheduleSentences(statement)[0] ?? statement;
+  return pickUniqueScheduleDate(
+    matchWholeTextScheduleTemplate(sentence),
+    allScheduleTargetDates(statement)
   );
 }
 
 /**
- * Text fallback: the whole statement must be a clean schedule clause.
- * A lone calendar date is not enough. Extra guards still drop TBD,
- * from/was/previously, vacated-before, and clause disqualifier words.
+ * Text fallback: keep a date only when the whole event text matches
+ * the strict schedule template and yields exactly one date.
  */
 function pickCurrentCalendarDate(
-  dates: CalendarDateMatch[],
+  _dates: CalendarDateMatch[],
   text: string
 ): CalendarDate | null {
-  const inferred = inferCleanScheduleDate(text);
-  if (!inferred) return null;
-  const match = dates.find((date) => datesEqual(date, inferred));
-  if (match && dateHasDisqualifyingAttachment(text, match)) {
-    return null;
-  }
-  if (
-    match &&
-    !isPositiveSchedulingTarget(text, match)
-  ) {
-    return null;
-  }
-  return inferred;
+  return inferStrictScheduleDate(text);
 }
 
 function unknownImportantDate(): StatusClaim {
@@ -1883,13 +1830,12 @@ function importantDateClaim(
  * Structured data first: the latest SCHEDULE_STATUS_REPORTED event at or
  * before asOf, via getLatestEvent. If the object itself is a complete
  * valid calendar date, that date is SUPPORTED. Otherwise text is an
- * INFERRED fallback only when the whole statement is a clean schedule:
- * plain subject, then set for / scheduled for / due / by / continued|
- * moved|rescheduled to, then a date, then only optional time, place,
- * and punctuation. Continuance "to" without a date is UNKNOWN and does
- * not fall back to an earlier date. Relative phrasing, bare "to",
- * from/was/previously/cancel/vacate/TBD attachments, and ambiguity are
- * UNKNOWN. Numeric dates in text are US MM/DD/YYYY. Comparison with
+ * INFERRED fallback only when the whole trimmed action matches one
+ * schedule template (plain subject, set for/scheduled for/due/due by/by
+ * or continued/moved/rescheduled [from DATE] to DATE, optional time and
+ * place). Extra sentences, extra place text, forbidden words, and two
+ * or more resulting dates are UNKNOWN. Relative phrasing and bare "to"
+ * are UNKNOWN. Numeric dates in text are US MM/DD/YYYY. Comparison with
  * asOf is by UTC calendar day.
  *
  * Later schedule events supersede earlier ones. A date whose UTC

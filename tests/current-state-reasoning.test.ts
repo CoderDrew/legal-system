@@ -5190,7 +5190,7 @@ test("important-date: text calendar date is INFERRED", () => {
         eventId: `${matterId}-schedule`,
         occurredAt: "2026-09-12T09:00:00Z",
         sourceRecordedAt: "2026-09-12T09:00:00Z",
-        action: "Reported that the conference is scheduled for October 15, 2026.",
+        action: "Conference scheduled for October 15, 2026.",
         object: "Settlement conference",
       }),
     ],
@@ -5321,8 +5321,7 @@ test("important-date: continuance in one event keeps the destination date", () =
         eventId: `${matterId}-schedule`,
         occurredAt: "2026-09-12T09:00:00Z",
         sourceRecordedAt: "2026-09-12T09:00:00Z",
-        action:
-          "Reported that the hearing was continued from October 1, 2026 to October 15, 2026.",
+        action: "Hearing continued from October 1, 2026 to October 15, 2026.",
         object: "Hearing",
       }),
     ],
@@ -5562,7 +5561,7 @@ test("important-date: text dates require a positive scheduling form", () => {
     { action: "previously 2026-10-15", expected: "Unknown" },
     {
       action: "Respond to 2026-10-01 order by 2026-10-20",
-      expected: "October 20, 2026",
+      expected: "Unknown",
     },
     {
       action: "Hearing set for 2026-10-15",
@@ -5958,4 +5957,69 @@ test("important-date: continued from/to keeps the destination date", () => {
   assert.equal(derived.state, "INFERRED");
   assert.equal(derived.value, "November 20, 2026");
   assert.notEqual(derived.value, "October 15, 2026");
+});
+
+test("important-date: extra sentence, place tail, and subject words are UNKNOWN", () => {
+  const cases = [
+    "Hearing set for 2026-10-15. Hearing cancelled.",
+    "Hearing set for 2026-10-15. It was stayed.",
+    "Hearing set for 2026-10-15. Struck.",
+    "2026-10-15 in Courtroom 4 deferred",
+    "Hearing set for 2026-10-15 in Courtroom 4 deferred",
+    "Hearing set for 2026-10-15 in Denver pending stay",
+    "Hearing set for 2026-10-15 in theory",
+    "Deadline by 2026-10-15 in limbo",
+    "Deposition of Smith not set for 2026-10-15",
+    "never scheduled for 2026-10-15",
+    "Deposition of the witness who declined set for 2026-10-15",
+  ];
+
+  for (const action of cases) {
+    const matterId = `test-matter-date-template-${action.length}`;
+    const derived = deriveImportantDateSlot(
+      [
+        scheduleStatusEvent({
+          matterId,
+          eventId: `${matterId}-schedule`,
+          occurredAt: "2026-09-12T09:00:00Z",
+          sourceRecordedAt: "2026-09-12T09:00:00Z",
+          action,
+          object: "Hearing",
+        }),
+      ],
+      matterId,
+      IMPORTANT_DATE_AS_OF,
+    );
+    assert.equal(
+      derived.state,
+      "UNKNOWN",
+      `${JSON.stringify(action)} must be UNKNOWN, got ${derived.state} / ${derived.value}`,
+    );
+    assert.equal(derived.value, "Unknown");
+    assert.notEqual(derived.value, "October 15, 2026");
+    assert.notEqual(derived.value, "2026-10-15");
+  }
+});
+
+test("important-date: two clean dates in one statement are UNKNOWN", () => {
+  const matterId = "test-matter-date-two-clean";
+  const derived = deriveImportantDateSlot(
+    [
+      scheduleStatusEvent({
+        matterId,
+        eventId: `${matterId}-schedule`,
+        occurredAt: "2026-09-12T09:00:00Z",
+        sourceRecordedAt: "2026-09-12T09:00:00Z",
+        action:
+          "Hearing set for Oct 15, 2026 and Conference set for Nov 20, 2026",
+        object: "Hearing",
+      }),
+    ],
+    matterId,
+    IMPORTANT_DATE_AS_OF,
+  );
+  assert.equal(derived.state, "UNKNOWN");
+  assert.equal(derived.value, "Unknown");
+  assert.notEqual(derived.value, "October 15, 2026");
+  assert.notEqual(derived.value, "November 20, 2026");
 });
