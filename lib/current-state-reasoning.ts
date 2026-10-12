@@ -1296,75 +1296,72 @@ function normalizedStatement(text: string): string {
 }
 
 /**
- * The whole statement is a single clean positive assignment of this
- * name — nothing before or after except an optional "noted that"
- * report prefix and a same-clause object after handle. Extra clauses
- * and qualifiers fail the anchor rather than matching a denylist.
+ * Split on clause boundaries. `and` starts a new clause only when it
+ * introduces a file transfer (resigned and the file was reassigned to
+ * Y). Bare "and assigned to" stays one clause so two assignees remain
+ * exactly-one UNKNOWN.
  */
-function isCleanPositiveAssignmentStatement(
-  action: string,
-  name: string
-): boolean {
+function splitOwnerClauses(text: string): string[] {
+  return normalizedStatement(text)
+    .split(
+      /(?:[.;]+|\s+\bbut\b\s+|,?\s*\bthen\b\s+|\s+\band\s+(?=(?:the\s+file\s+was\s+)?(?:reassigned|transferred|handed(?:\s+off)?)\s+to\b))/i
+    )
+    .map((clause) => clause.trim())
+    .filter((clause) => clause.length > 0);
+}
+
+function clauseStartsHistorical(clause: string): boolean {
+  return /^(?:at\s+first|originally|previously|formerly|initially)\b/i.test(
+    clause
+  );
+}
+
+/**
+ * The final clause is a clean positive assignment or transfer TO this
+ * known identity, with nothing after that assignment in the clause.
+ * Earlier departure clauses about other people are ignored.
+ */
+function isCleanPositiveClause(clause: string, name: string): boolean {
   const escaped = boundPersonName(name);
   if (!escaped) return false;
-  const statement = normalizedStatement(action);
+  const text = normalizedStatement(clause);
+  if (clauseStartsHistorical(text)) return false;
   return [
     `^(?:recorded|assigned|named|designated|appointed)\\s+${escaped}\\s+as\\s+(?:the\\s+)?(?:responsible\\s+attorney|owner|counsel(?:\\s+of\\s+record)?)$`,
-    `^assigned\\s+to\\s+${escaped}$`,
-    `^(?:noted\\s+that\\s+)?${escaped}\\s+(?:took\\s+over|has\\s+taken\\s+over|is\\s+taking\\s+over)$`,
-    `^(?:noted\\s+that\\s+)?${escaped}\\s+(?:will\\s+handle|is\\s+handling|handles)(?:\\s+[\\w][\\w\\s'-]*)?$`,
-  ].some((source) => new RegExp(source, "i").test(statement));
-}
-
-/**
- * Exception: a recognized transfer or replacement whose incoming owner
- * is this name. The incoming construction is anchored at the end of the
- * statement.
- */
-function isIncomingOwnerInRecognizedTransfer(
-  action: string,
-  name: string
-): boolean {
-  const escaped = boundPersonName(name);
-  if (!escaped) return false;
-  const statement = normalizedStatement(action);
-  return [
+    `(?:^|and\\s+)(?:now\\s+)?(?:the\\s+file\\s+was\\s+)?(?:assigned|reassigned|transferred|handed(?:\\s+off)?)\\s+to\\s+${escaped}(?:\\s+and\\b|$)`,
     `^(?:transferred|reassigned|handed(?:\\s+off)?)\\s+from\\b[\\s\\S]+?\\bto\\s+${escaped}$`,
-    `^[\\s\\S]+?\\bwas\\s+replaced\\s+by\\s+${escaped}$`,
+    `(?:^|and\\s+)(?:noted\\s+that\\s+)?${escaped}\\s+(?:took\\s+over|has\\s+taken\\s+over|is\\s+taking\\s+over)(?:\\s+from\\b.*)?$`,
+    `(?:^|and\\s+)(?:noted\\s+that\\s+)?${escaped}\\s+(?:will\\s+handle|is\\s+handling|handles)(?:\\s+[\\w][\\w\\s'-]*)?$`,
+    `^[\\s\\S]*?\\bwas\\s+replaced\\s+by\\s+${escaped}$`,
     `^replaced\\s+by\\s+${escaped}$`,
     `^succeeded\\s+by\\s+${escaped}$`,
-    `^[\\s\\S]+?\\bnow\\s+(?:assigned|reassigned|transferred|handed(?:\\s+off)?)\\s+to\\s+${escaped}$`,
-  ].some((source) => new RegExp(source, "i").test(statement));
+  ].some((source) => new RegExp(source, "i").test(text));
 }
 
 /**
- * Text fallback: a known firm-side identity becomes owner only when the
- * whole statement is a clean positive assignment of that person, or a
- * recognized transfer/replacement that names them as the incoming
- * owner. Extra clauses make the statement UNKNOWN. Exactly one such
- * name is required.
+ * Text fallback: the final clause is a clean positive assignment or
+ * transfer TO a known firm-side identity, and nothing after it reverses
+ * it. Earlier departure clauses about other people are fine. Extra
+ * clauses in the final position, or more than one assigned name in that
+ * clause, are UNKNOWN.
  */
 function inferOwnerFromActionText(
   action: string,
   matter: SyntheticMatter,
   requestingUser: SyntheticUser
 ): string | null {
-  const identities = mentionedFirmSideIdentities(
-    action,
+  const clauses = splitOwnerClauses(action);
+  const last = clauses[clauses.length - 1];
+  if (!last || clauseStartsHistorical(last)) {
+    return null;
+  }
+  const assigned = mentionedFirmSideIdentities(
+    last,
     matter,
     requestingUser
-  );
-  const assigned = identities.filter((name) =>
-    isCleanPositiveAssignmentStatement(action, name)
-  );
+  ).filter((name) => isCleanPositiveClause(last, name));
   if (assigned.length === 1) {
     return assigned[0];
-  }
-  const incoming = identities.filter((name) =>
-    isIncomingOwnerInRecognizedTransfer(action, name)
-  );
-  if (incoming.length === 1) {
-    return incoming[0];
   }
   return null;
 }
@@ -1391,12 +1388,11 @@ function ownerClaim(
  * identities (responsible attorney or requesting user). A role label
  * such as "Responsible attorney" is not the person. Email local-part
  * matching is used when the source artifact identifies a known person.
- * Text is an INFERRED fallback only when the whole statement is a
- * clean positive assignment of a known firm-side identity, or a
- * recognized transfer/replacement that names the incoming owner.
- * Extra clauses are UNKNOWN — missing an inferred owner is acceptable;
- * a reversed one is not. A lone name, including one paired with a role
- * label, is UNKNOWN.
+ * Text is an INFERRED fallback only when the final clause is a clean
+ * positive assignment or transfer TO a known firm-side identity, with
+ * nothing after that assignment reversing it. Earlier departure clauses
+ * about other people are fine. Extra clauses in the final position, or
+ * more than one assigned name, are UNKNOWN.
  *
  * Smith v. Acme is SUPPORTED because its event action is
  * "Recorded Alex Thompson as the responsible attorney." — a clean
@@ -1645,18 +1641,24 @@ function datesEqual(left: CalendarDate, right: CalendarDate): boolean {
   );
 }
 
-function clauseBefore(text: string, index: number): string {
+function clauseAround(text: string, index: number): string {
   const start = Math.max(
     text.lastIndexOf(".", index - 1),
     text.lastIndexOf(";", index - 1)
   );
-  return text.slice(start + 1, index);
+  const from = start + 1;
+  const after = text.slice(index);
+  const relEnd = after.search(/[.;]/);
+  const end = relEnd === -1 ? text.length : index + relEnd;
+  return text.slice(from, end);
 }
 
 /**
  * A date counts only as the target of a positive scheduling form:
  * set for, scheduled for, due, by, or continued/moved/rescheduled to.
- * Bare "to" is not a destination.
+ * Bare "to" is not a destination. Optional from/was/previously between
+ * the form and the date is still a positive form so those qualifiers
+ * can be rejected by the attachment rules rather than silently matching.
  */
 function isPositiveSchedulingTarget(
   text: string,
@@ -1664,20 +1666,34 @@ function isPositiveSchedulingTarget(
 ): boolean {
   const before = text.slice(0, date.index);
   if (
-    /(?:\bset\s+for|\bscheduled\s+for|\bdue(?:\s+on)?|\bby)\s+$/i.test(before)
+    /(?:\bset\s+for|\bscheduled\s+for|\bdue(?:\s+on)?|\bby)\s+(?:(?:from|was|previously)\s+)?$/i.test(
+      before
+    )
   ) {
     return true;
   }
   return (
     /\bto\s+$/i.test(before) &&
-    /\b(?:continued|moved|rescheduled)\b/i.test(clauseBefore(text, date.index))
+    /\b(?:continued|moved|rescheduled)\b/i.test(clauseAround(text, date.index))
+  );
+}
+
+function clauseHasScheduleDisqualifier(clause: string): boolean {
+  const withoutContinuanceWas = clause.replace(
+    /\bwas\s+(?:continued|moved|rescheduled)\b/gi,
+    ""
+  );
+  return /(?:\b(?:cancel(?:led|ed)?|vacate(?:d)?|withdrawn|previously|originally|was)\b|\boff\s+calendar\b|\bwithout\s+date\b)/i.test(
+    withoutContinuanceWas
   );
 }
 
 /**
- * Qualifiers attached to this date — from/was/previously before it,
- * cancel/vacate/TBD after it, or TBD anywhere in the statement — mean
- * it is not a current target.
+ * Qualifiers attached to this date — TBD anywhere in the statement,
+ * from/was/previously immediately before it, vacated shortly before it,
+ * cancel/vacate/withdrawn/off calendar/without date/previously/
+ * originally/was in its clause, or cancel immediately after — mean it
+ * is not a current target.
  */
 function dateHasDisqualifyingAttachment(
   text: string,
@@ -1692,6 +1708,9 @@ function dateHasDisqualifyingAttachment(
     return true;
   }
   if (/\bvacated\b[\s\S]{0,40}$/i.test(before)) {
+    return true;
+  }
+  if (clauseHasScheduleDisqualifier(clauseAround(text, date.index))) {
     return true;
   }
   return /^\s*[,).]?\s*(?:cancelled|canceled|cancel|vacated|vacate)\b/i.test(
