@@ -3949,7 +3949,14 @@ test("next-action: later Settled status does not drive the Smith-style sentence"
     }),
   ];
 
-  const derived = deriveNextActionSlot(syntheticEvents, matterId, testMatter, [], syntheticRequestingUser, NEXT_ACTION_AS_OF);
+  const derived = deriveNextActionSlot(
+    syntheticEvents,
+    matterId,
+    testMatter,
+    [],
+    syntheticRequestingUser,
+    "2026-09-30T23:59:59Z",
+  );
   assert.notEqual(derived.value, SMITH_STYLE_SENTENCE);
   assert.equal(!derived.value.includes("Respond to opposing counsel after the client makes a decision"), true, "Settled matter must not keep the Smith-style next action");
 });
@@ -3980,7 +3987,14 @@ test("next-action: later Closed status does not drive the Smith-style sentence",
     }),
   ];
 
-  const derived = deriveNextActionSlot(syntheticEvents, matterId, testMatter, [], syntheticRequestingUser, NEXT_ACTION_AS_OF);
+  const derived = deriveNextActionSlot(
+    syntheticEvents,
+    matterId,
+    testMatter,
+    [],
+    syntheticRequestingUser,
+    "2026-09-30T23:59:59Z",
+  );
   assert.notEqual(derived.value, SMITH_STYLE_SENTENCE);
   assert.equal(!derived.value.includes("Respond to opposing counsel after the client makes a decision"), true, "Closed matter must not keep the Smith-style next action");
 });
@@ -4008,7 +4022,14 @@ test("next-action: later client document does not drive the Smith-style sentence
     }),
   ];
 
-  const derived = deriveNextActionSlot(syntheticEvents, matterId, testMatter, [], syntheticRequestingUser, NEXT_ACTION_AS_OF);
+  const derived = deriveNextActionSlot(
+    syntheticEvents,
+    matterId,
+    testMatter,
+    [],
+    syntheticRequestingUser,
+    "2026-09-30T23:59:59Z",
+  );
   assert.notEqual(derived.value, SMITH_STYLE_SENTENCE);
   assert.equal(!derived.value.includes("Respond to opposing counsel after the client makes a decision"), true, "A later client document must stale the pending approval next action");
 });
@@ -4506,7 +4527,7 @@ test("next-action: later opposing-counsel document then Settled is UNKNOWN", () 
     testMatter,
     [],
     syntheticRequestingUser,
-    NEXT_ACTION_AS_OF,
+    "2026-09-30T23:59:59Z",
   );
 
   assert.equal(derived.state, "UNKNOWN");
@@ -4551,8 +4572,64 @@ test("next-action: invalid or missing asOf is UNKNOWN, not never-stale", () => {
       "UNKNOWN",
       `Invalid asOf ${JSON.stringify(asOf)} must be explicit UNKNOWN`,
     );
+    assert.equal(derived.value, "Unknown");
     assert.notEqual(derived.value, SMITH_STYLE_SENTENCE, `Invalid asOf ${JSON.stringify(asOf)} must not silently mean never stale`);
   }
+});
+
+test("next-action: asOf before the approval is UNKNOWN", () => {
+  const matterId = "test-matter-na-asof-before-approval";
+  const derived = deriveNextActionSlot(
+    smithStyleApprovalEvents(matterId),
+    matterId,
+    makeNextActionMatter(matterId),
+    [],
+    syntheticRequestingUser,
+    "2026-09-05T23:59:59Z",
+  );
+
+  assert.equal(derived.state, "UNKNOWN");
+  assert.equal(derived.value, "Unknown");
+  assert.notEqual(derived.value, SMITH_STYLE_SENTENCE);
+});
+
+test("next-action: settled status after asOf does not suppress next-action", () => {
+  const matterId = "test-matter-na-settled-after-asof";
+  const syntheticEvents: OperationalEvent[] = [
+    ...smithStyleApprovalEvents(matterId),
+    makeNextActionEvent({
+      eventId: `${matterId}-settled`,
+      matterId,
+      eventType: "MATTER_STATUS_RECORDED",
+      occurredAt: "2026-09-20T09:00:00Z",
+      actor: null,
+      action: "Recorded the matter status as Settled.",
+      object: "Matter status",
+      semantics: {
+        recordedStatus: "settled",
+      },
+      provenance: {
+        sourceArtifactId: `${matterId}-artifact-settled`,
+        sourceSystem: "Clio",
+        sourceRecordedAt: "2026-09-20T09:00:00Z",
+        associationMethod: "AUTHORITATIVE_SOURCE_RELATIONSHIP",
+        evidenceExcerpt: "Matter status: Settled",
+      },
+    }),
+  ];
+
+  const derived = deriveNextActionSlot(
+    syntheticEvents,
+    matterId,
+    makeNextActionMatter(matterId),
+    [],
+    syntheticRequestingUser,
+    NEXT_ACTION_AS_OF,
+  );
+
+  assert.equal(derived.state, "INFERRED");
+  assert.equal(derived.value, SMITH_STYLE_SENTENCE);
+  assert.notEqual(derived.state, "UNKNOWN");
 });
 
 test("next-action: webmail domain must not make opposing counsel look like our side", () => {
@@ -5808,6 +5885,64 @@ test("owner: named assignee alongside omitted assignedPerson is SUPPORTED", () =
   assert.equal(derived.value, "Alex Thompson");
   assert.notEqual(derived.state, "CONFLICTING");
   assert.deepEqual(derived.evidenceIds, [`${matterId}-artifact-named`]);
+});
+
+test("owner: named assignee alongside explicit unassigned is CONFLICTING", () => {
+  const matterId = "test-matter-owner-explicit-none";
+  const derived = deriveOwnerSlot(
+    [
+      makeOwnerEvent({
+        eventId: `${matterId}-aaa-named`,
+        matterId,
+        eventType: "RESPONSIBILITY_RECORDED",
+        occurredAt: "2026-09-16T12:00:00Z",
+        actor: null,
+        action: "Recorded Alex Thompson as the responsible attorney.",
+        object: "Responsible attorney",
+        semantics: {
+          assignedPerson: "Alex Thompson",
+        },
+        provenance: {
+          sourceArtifactId: `${matterId}-artifact-named`,
+          sourceSystem: "Clio",
+          sourceRecordedAt: "2026-09-16T12:00:00Z",
+          associationMethod: "AUTHORITATIVE_SOURCE_RELATIONSHIP",
+          evidenceExcerpt: "Alex Thompson",
+        },
+      }),
+      makeOwnerEvent({
+        eventId: `${matterId}-zzz-unassigned`,
+        matterId,
+        eventType: "RESPONSIBILITY_RECORDED",
+        occurredAt: "2026-09-16T12:00:00Z",
+        actor: null,
+        action: "Recorded that the file currently has no assignee.",
+        object: "Responsible attorney",
+        semantics: {
+          assignedPerson: null,
+        },
+        provenance: {
+          sourceArtifactId: `${matterId}-artifact-unassigned`,
+          sourceSystem: "Outlook",
+          sourceRecordedAt: "2026-09-16T12:00:00Z",
+          associationMethod: "EXPLICIT_MATTER_ID",
+          evidenceExcerpt: "unassigned",
+        },
+      }),
+    ],
+    matterId,
+    makeOwnerMatter(matterId),
+    syntheticRequestingUser,
+    OWNER_AS_OF,
+  );
+
+  assert.equal(derived.state, "CONFLICTING");
+  assert.equal(derived.value, "Unknown");
+  assert.notEqual(derived.value, "Alex Thompson");
+  assert.deepEqual(derived.evidenceIds, [
+    `${matterId}-artifact-named`,
+    `${matterId}-artifact-unassigned`,
+  ]);
 });
 
 // ============================================================================

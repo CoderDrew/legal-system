@@ -1093,7 +1093,8 @@ function nextActionAfterApprovalWithoutExternalSender(
  * (semantics.recordedStatus), a later client document exists, or about
  * six months of silence have elapsed. Client identity uses structured
  * recipient matching, then semantics.approvalKind. Action text is never
- * parsed.
+ * parsed. Only events at or before asOf are considered. Invalid asOf is
+ * UNKNOWN.
  */
 export function deriveNextActionSlot(
   events: OperationalEvent[],
@@ -1103,11 +1104,15 @@ export function deriveNextActionSlot(
   requestingUser: SyntheticUser,
   asOf: string,
 ): StatusClaim {
-  if (parseAsOfTime(asOf) === null) {
+  const asOfTime = parseAsOfTime(asOf);
+  if (asOfTime === null) {
     return unknownNextAction();
   }
 
-  const allMatterEvents = events.filter((event) => event.matterId === matterId);
+  const allMatterEvents = events.filter(
+    (event) =>
+      event.matterId === matterId && getEventTimestamp(event) <= asOfTime
+  );
   const statusEvents = allMatterEvents.filter(
     (event) => event.eventType === "MATTER_STATUS_RECORDED"
   );
