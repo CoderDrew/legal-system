@@ -5,6 +5,7 @@ import "./evidence-processing.test";
 import "./operational-events.test";
 import "./current-state-ground-truth.test";
 import "./current-state-reasoning.test";
+import "./synthetic-corpus.test";
 
 test("the test entrypoint includes every test file", () => {
   const testFiles = readdirSync(import.meta.dirname)
@@ -16,5 +17,6 @@ test("the test entrypoint includes every test file", () => {
     "current-state-reasoning.test.ts",
     "evidence-processing.test.ts",
     "operational-events.test.ts",
+    "synthetic-corpus.test.ts",
   ]);
 });

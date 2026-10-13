@@ -1,3 +1,8 @@
+import {
+  adversarialCorpusEvidence,
+  adversarialCorpusEventGroundTruth,
+  adversarialCorpusMatters,
+} from "@/data/matters";
 import type {
   MatterStatusBrief,
   OperationalEventGroundTruth,
@@ -6,7 +11,7 @@ import type {
   SyntheticUser,
 } from "@/types/mattermind";
 
-export const syntheticMatters: SyntheticMatter[] = [
+const coreSyntheticMatters: SyntheticMatter[] = [
   {
     id: "matter-2026-0142",
     matterNumber: "2026-0142",
@@ -35,13 +40,18 @@ export const syntheticMatters: SyntheticMatter[] = [
   },
 ];
 
+export const syntheticMatters: SyntheticMatter[] = [
+  ...coreSyntheticMatters,
+  ...adversarialCorpusMatters,
+];
+
 export const syntheticRequestingUser: SyntheticUser = {
   id: "user-rachel-morgan",
   name: "Rachel Morgan",
-  authorizedMatterIds: ["matter-2026-0142", "matter-2026-0159"],
+  authorizedMatterIds: syntheticMatters.map((matter) => matter.id),
 };
 
-export const syntheticEvidenceUniverse: SyntheticEvidenceItem[] = [
+const coreSyntheticEvidenceUniverse: SyntheticEvidenceItem[] = [
   {
     id: "clio-matter-0142",
     sourceSystem: "Clio",
@@ -199,7 +209,12 @@ export const syntheticEvidenceUniverse: SyntheticEvidenceItem[] = [
   },
 ];
 
-export const syntheticOperationalEventGroundTruth: OperationalEventGroundTruth = {
+export const syntheticEvidenceUniverse: SyntheticEvidenceItem[] = [
+  ...coreSyntheticEvidenceUniverse,
+  ...adversarialCorpusEvidence,
+];
+
+const coreSyntheticOperationalEventGroundTruth: OperationalEventGroundTruth = {
   "email-0142-scheduling": [
     {
       eventId: "email-0142-scheduling:schedule-status-reported",
@@ -303,6 +318,12 @@ export const syntheticOperationalEventGroundTruth: OperationalEventGroundTruth =
     },
   ],
 };
+
+export const syntheticOperationalEventGroundTruth: OperationalEventGroundTruth =
+  {
+    ...coreSyntheticOperationalEventGroundTruth,
+    ...adversarialCorpusEventGroundTruth,
+  };
 
 export const syntheticMatterBrief: MatterStatusBrief = {
   matter: syntheticMatters[0],

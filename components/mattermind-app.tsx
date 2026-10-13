@@ -1,104 +1,27 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import { DEFAULT_MATTER_ID } from "@/data/synthetic-corpus";
 import {
-  syntheticEvidenceUniverse,
-  syntheticMatterBrief,
-  syntheticOperationalEventGroundTruth,
-  syntheticRequestingUser,
-} from "@/data/synthetic-matter";
-import { syntheticCurrentStateGroundTruth } from "@/data/synthetic-current-state";
-import { buildEligibleEvidenceSet } from "@/lib/evidence-processing";
-import { extractOperationalEvents } from "@/lib/operational-events";
-import { deriveCurrentStatusSlot, deriveLastImportantEventSlot, deriveWaitingOnSlot, deriveNextActionSlot, deriveOwnerSlot, deriveImportantDateSlot, deriveSignificantNewInformationSlot } from "@/lib/current-state-reasoning";
+  reconstructSelectedMatter,
+  selectableCorpusMatters,
+} from "@/lib/matter-view";
 import { EvidencePanel } from "@/components/evidence-panel";
 import { StatusBrief } from "@/components/status-brief";
 import { ArrowRightIcon, DocumentIcon, LockIcon } from "@/components/icons";
 
-const evidenceProcessing = buildEligibleEvidenceSet({
-  user: syntheticRequestingUser,
-  selectedMatter: syntheticMatterBrief.matter,
-  evidenceUniverse: syntheticEvidenceUniverse,
-});
-
-const operationalEvents = extractOperationalEvents({
-  eligibleEvidence: evidenceProcessing.eligibleEvidence,
-  groundTruth: syntheticOperationalEventGroundTruth,
-  matterId: syntheticMatterBrief.matter.id,
-});
-
-// Derive slots from events
-const derivedCurrentStatusSlot = deriveCurrentStatusSlot(
-  operationalEvents,
-  syntheticMatterBrief.matter.id,
-  syntheticMatterBrief.matter,
-  syntheticCurrentStateGroundTruth.asOf,
-);
-
-const derivedLastImportantEventSlot = deriveLastImportantEventSlot(
-  operationalEvents,
-  syntheticMatterBrief.matter.id,
-  syntheticMatterBrief.matter,
-);
-
-const derivedWaitingOnSlot = deriveWaitingOnSlot(
-  operationalEvents,
-  syntheticMatterBrief.matter.id,
-  syntheticMatterBrief.matter,
-  evidenceProcessing.eligibleEvidence,
-);
-
-const derivedNextActionSlot = deriveNextActionSlot(
-  operationalEvents,
-  syntheticMatterBrief.matter.id,
-  syntheticMatterBrief.matter,
-  evidenceProcessing.eligibleEvidence,
-  syntheticRequestingUser,
-  syntheticCurrentStateGroundTruth.asOf,
-);
-
-const derivedOwnerSlot = deriveOwnerSlot(
-  operationalEvents,
-  syntheticMatterBrief.matter.id,
-  syntheticMatterBrief.matter,
-  syntheticRequestingUser,
-  syntheticCurrentStateGroundTruth.asOf,
-);
-
-const derivedImportantDateSlot = deriveImportantDateSlot(
-  operationalEvents,
-  syntheticMatterBrief.matter.id,
-  syntheticCurrentStateGroundTruth.asOf,
-);
-
-const derivedSignificantInformationSlot = deriveSignificantNewInformationSlot(
-  operationalEvents,
-  syntheticMatterBrief.matter.id,
-  syntheticMatterBrief.matter,
-  evidenceProcessing.eligibleEvidence,
-  syntheticRequestingUser,
-  syntheticCurrentStateGroundTruth.asOf,
-);
-
-// Build the brief with all 7 slots derived from structured operational events.
-const matterBrief = {
-  ...syntheticMatterBrief,
-  claims: syntheticMatterBrief.claims.map((claim) => {
-    if (claim.id === "current-status") return derivedCurrentStatusSlot;
-    if (claim.id === "last-important-event") return derivedLastImportantEventSlot;
-    if (claim.id === "waiting-on") return derivedWaitingOnSlot;
-    if (claim.id === "next-action") return derivedNextActionSlot;
-    if (claim.id === "owner") return derivedOwnerSlot;
-    if (claim.id === "important-date") return derivedImportantDateSlot;
-    if (claim.id === "significant-information") return derivedSignificantInformationSlot;
-    return claim;
-  }),
-};
+const corpusMatters = selectableCorpusMatters();
 
 export function MatterMindApp() {
+  const [selectedMatterId, setSelectedMatterId] = useState(DEFAULT_MATTER_ID);
   const [isGenerated, setIsGenerated] = useState(false);
   const [selectedEvidenceIds, setSelectedEvidenceIds] = useState<string[] | null>(
     null,
+  );
+
+  const view = useMemo(
+    () => reconstructSelectedMatter(selectedMatterId),
+    [selectedMatterId],
   );
 
   const closeEvidence = useCallback(() => setSelectedEvidenceIds(null), []);
@@ -162,20 +85,26 @@ export function MatterMindApp() {
                 <select
                   className="w-full appearance-none rounded-xl border border-slate-300 bg-white px-4 py-3.5 pr-12 text-sm font-semibold text-slate-950 shadow-sm transition hover:border-slate-400"
                   id="matter-selector"
-                  value={syntheticMatterBrief.matter.id}
-                  onChange={() => undefined}
+                  value={selectedMatterId}
+                  onChange={(event) => {
+                    setSelectedMatterId(event.target.value);
+                    setSelectedEvidenceIds(null);
+                  }}
                 >
-                  <option value={syntheticMatterBrief.matter.id}>
-                    {syntheticMatterBrief.matter.name} — Matter #
-                    {syntheticMatterBrief.matter.matterNumber}
-                  </option>
+                  {corpusMatters.map((matter) => (
+                    <option key={matter.id} value={matter.id}>
+                      {matter.name} — Matter #{matter.matterNumber}
+                    </option>
+                  ))}
                 </select>
                 <span className="pointer-events-none absolute top-1/2 right-4 -translate-y-1/2 text-xs text-slate-500">
                   ▼
                 </span>
               </div>
               <p className="mt-2 text-xs text-slate-500">
-                One authorized synthetic matter is available in this increment.
+                {corpusMatters.length} authorized synthetic matters. Smith v. Acme
+                is the default. Each reconstruction uses only that matter&apos;s
+                events.
               </p>
             </div>
 
@@ -188,12 +117,12 @@ export function MatterMindApp() {
               {isGenerated ? (
                 <>
                   <DocumentIcon className="h-4.5 w-4.5" />
-                  Sample Brief Shown
+                  Status Brief Shown
                 </>
               ) : (
                 <>
                   <DocumentIcon className="h-4.5 w-4.5" />
-                  Show Sample Status Brief
+                  Show Status Brief
                   <ArrowRightIcon className="h-4.5 w-4.5" />
                 </>
               )}
@@ -204,11 +133,11 @@ export function MatterMindApp() {
         <div className="mt-6">
           {isGenerated ? (
             <StatusBrief
-              brief={matterBrief}
-              eligibleEvidence={evidenceProcessing.eligibleEvidence}
+              brief={view.brief}
+              eligibleEvidence={view.processed.eligibleEvidence}
               onInspectEvidence={setSelectedEvidenceIds}
-              operationalEvents={operationalEvents}
-              processingCounts={evidenceProcessing.counts}
+              operationalEvents={view.events}
+              processingCounts={view.processed.counts}
             />
           ) : (
             <section className="grid min-h-80 place-items-center rounded-2xl border border-dashed border-slate-300 bg-white/60 px-6 py-12 text-center">
@@ -222,8 +151,9 @@ export function MatterMindApp() {
                 <p className="mt-2 text-sm leading-6 text-slate-600">
                   This increment derives all 7 slots from operational events:
                   current-status, last-important-event, waiting-on, next-action, owner,
-                  important-date, and significant-information. Show the brief to review
-                  claims, evidence states, and source provenance.
+                  important-date, and significant-information. Select a synthetic
+                  matter and show the brief to review claims, evidence states, and
+                  source provenance.
                 </p>
               </div>
             </section>
@@ -237,7 +167,7 @@ export function MatterMindApp() {
       </footer>
 
       <EvidencePanel
-        evidence={evidenceProcessing.eligibleEvidence}
+        evidence={view.processed.eligibleEvidence}
         onClose={closeEvidence}
         selectedEvidenceIds={selectedEvidenceIds}
       />
