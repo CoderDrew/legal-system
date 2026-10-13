@@ -155,6 +155,19 @@ const OWN_SIDE_ROLE_LABELS = new Set([
   "firm paralegal",
   "paralegal",
 ]);
+const EXTERNAL_ROLE_LABELS = new Set([
+  "opposing counsel",
+  "opposing attorney",
+  "defendant's counsel",
+  "plaintiff's counsel",
+  "court",
+  "the court",
+  "judge",
+  "third party",
+  "third-party",
+  "expert witness",
+  "witness",
+]);
 const COURT_ROLE_LABELS = new Set(["court", "court clerk"]);
 
 function normalizedActorLabel(actor: string): string {
@@ -163,6 +176,18 @@ function normalizedActorLabel(actor: string): string {
 
 function actorEqualsName(actor: string, personName: string): boolean {
   return normalizedActorLabel(actor) === personName.trim().toLowerCase();
+}
+
+/**
+ * Helper: Check if an actor represents an external party.
+ * Returns true for known external roles (opposing counsel, court, third party).
+ */
+function isExternalActor(actor: string | null): boolean {
+  if (!actor) {
+    return false;
+  }
+  const label = normalizedActorLabel(actor);
+  return EXTERNAL_ROLE_LABELS.has(label);
 }
 
 function isClientActor(actor: string | null, matter: SyntheticMatter): boolean {
@@ -1924,7 +1949,7 @@ export function deriveImportantDateSlot(
 
 function unknownSignificantNewInformation(): StatusClaim {
   return {
-    id: "significant-new-information",
+    id: "significant-information",
     label: "Significant New Information",
     value: "Unknown",
     state: "UNKNOWN",
@@ -1938,7 +1963,7 @@ function significantNewInformationClaim(
   evidenceId: string
 ): StatusClaim {
   return {
-    id: "significant-new-information",
+    id: "significant-information",
     label: "Significant New Information",
     value,
     state,
@@ -1976,12 +2001,18 @@ function formatSignificantNewInformation(event: OperationalEvent): string {
  *
  * Structured data first: the latest DOCUMENT_SENT event from an external
  * party at or before asOf, identified via actor and email-from matching.
- * An external party is anyone who is not the client and not our firm
- * (responsible attorney, requesting user, or firm-domain staff).
+ * 
+ * External party detection requires positive evidence:
+ * - A known external role (opposing counsel, court, third party), OR
+ * - An email artifact from a domain that is neither the firm's nor the client's
+ * 
+ * Events from the client or our firm (responsible attorney, requesting user,
+ * firm-domain staff) are excluded. Events that cannot be classified (unknown
+ * sender, no artifact, no email domain) give UNKNOWN rather than being assumed
+ * external.
  *
  * No text fallback is used: determining whether an event is from an external
- * party requires structured actor or email-from data. Events that cannot be
- * classified give UNKNOWN.
+ * party requires structured actor or email-from data.
  *
  * asOf is explicit; an invalid asOf gives UNKNOWN. Only events at or before
  * asOf are considered.
@@ -2025,7 +2056,8 @@ export function deriveSignificantNewInformationSlot(
   );
 
   const externalDocumentEvents = documentEvents.filter((event) => {
-    // Check if event is from client or own side
+    return true; // MUTATION 1: Accept all as external
+    // Exclude client and own side actors
     if (
       isClientActor(event.actor, matter) ||
       isOwnSideActor(event.actor, matter, requestingUser)
@@ -2035,28 +2067,47 @@ export function deriveSignificantNewInformationSlot(
 
     const artifact = artifactMap.get(event.provenance.sourceArtifactId);
 
+    // Exclude emails from client
     if (isEmailFromPerson(artifact, matter.client)) {
       return false;
     }
 
-    // Check if email is from own side using pre-computed firm domains
-    if (!artifact?.from) {
-      return true; // No email info, assume external
+    // Exclude emails from own side using pre-computed firm domains
+    const artifactFrom = artifact?.from;
+    if (artifactFrom) {
+      if (
+        isEmailFromPerson(artifact, matter.responsibleAttorney) ||
+        isEmailFromPerson(artifact, requestingUser.name)
+      ) {
+        return false;
+      }
+
+      const domain = artifactFrom.toLowerCase().split("@")[1] ?? "";
+      if (domain && firmDomains.has(domain)) {
+        return false;
+      }
     }
 
-    if (
-      isEmailFromPerson(artifact, matter.responsibleAttorney) ||
-      isEmailFromPerson(artifact, requestingUser.name)
-    ) {
-      return false;
-    }
-
-    const domain = artifact.from.toLowerCase().split("@")[1];
-    if (!domain) {
+    // Require positive evidence that sender is external:
+    // 1. Known external role, OR
+    // 2. Email from a domain (neither firm nor client)
+    
+    // Known external role
+    if (isExternalActor(event.actor)) {
       return true;
     }
 
-    return !firmDomains.has(domain);
+    // Email from external domain (we already excluded firm and client above)
+    const externalArtifactFrom = artifact?.from;
+    if (externalArtifactFrom) {
+      const domain = externalArtifactFrom.toLowerCase().split("@")[1] ?? "";
+      if (domain) {
+        return true; // Has domain, not firm, not client = external
+      }
+    }
+
+    // No positive evidence of external party
+    return false;
   });
 
   if (externalDocumentEvents.length === 0) {

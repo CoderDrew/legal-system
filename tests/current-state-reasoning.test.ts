@@ -6142,12 +6142,11 @@ test("important-date: courtroom id with a digit or a single city still resolves"
   }
 });
 
-
 // ============================================================================
-// significant-new-information slot tests  
+// significant-information slot tests
 // ============================================================================
 
-test("derived significant-new-information slot matches ground-truth expectation", () => {
+test("derived significant-information slot matches ground-truth expectation", () => {
   const derived = deriveSignificantNewInformationSlot(
     extractedEvents,
     syntheticMatters[0].id,
@@ -6161,7 +6160,7 @@ test("derived significant-new-information slot matches ground-truth expectation"
   );
 
   assert.ok(expectation, "Ground truth has significant-information expectation");
-  assert.equal(derived.id, "significant-new-information");
+  assert.equal(derived.id, "significant-information");
   assert.equal(derived.state, expectation.expectedState);
   assert.equal(derived.value, expectation.expectedValue);
 
@@ -6176,7 +6175,7 @@ test("derived significant-new-information slot matches ground-truth expectation"
   assert.deepEqual(derivedArtifactIds, expectedArtifactIds);
 });
 
-test("significant-new-information: UNKNOWN with invalid asOf", () => {
+test("significant-information: returns UNKNOWN with invalid asOf", () => {
   const derived = deriveSignificantNewInformationSlot(
     extractedEvents,
     syntheticMatters[0].id,
@@ -6189,7 +6188,7 @@ test("significant-new-information: UNKNOWN with invalid asOf", () => {
   assert.equal(derived.value, "Unknown");
 });
 
-test("significant-new-information: UNKNOWN when no DOCUMENT_SENT events", () => {
+test("significant-information: returns UNKNOWN when no DOCUMENT_SENT events", () => {
   const noDocEvents = extractedEvents.filter(e => e.eventType !== "DOCUMENT_SENT");
   const derived = deriveSignificantNewInformationSlot(
     noDocEvents,
