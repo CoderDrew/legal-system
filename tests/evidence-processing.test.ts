@@ -128,11 +128,14 @@ test("Smith v. Acme processing counts expose the deterministic boundary", () => 
     evidenceUniverse: syntheticEvidenceUniverse,
   });
 
-  assert.deepEqual(result.counts, {
-    total: 11,
-    authorized: 10,
-    associated: 6,
-    ambiguous: 1,
-    eligible: 6,
-  });
+  assert.equal(result.counts.total, syntheticEvidenceUniverse.length);
+  assert.equal(
+    result.counts.authorized,
+    syntheticEvidenceUniverse.filter((item) =>
+      item.authorizedUserIds.includes(syntheticRequestingUser.id),
+    ).length,
+  );
+  assert.equal(result.counts.associated, 6);
+  assert.equal(result.counts.ambiguous, 1);
+  assert.equal(result.counts.eligible, 6);
 });

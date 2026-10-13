@@ -372,7 +372,7 @@ Synthetic Artifacts
 
 Only eligible evidence enters extraction. The current synthetic extractor uses explicit ground-truth fixtures, supports zero, one, or multiple events per artifact, preserves association and source provenance, and orders output deterministically by the source record timestamp and event identity. It performs no event deduplication. Historical events remain immutable; supersession changes operational significance without removing history.
 
-The current ground-truth case contains six eligible artifacts and seven extracted events:
+The default ground-truth case, Smith v. Acme, contains six eligible artifacts and seven extracted events:
 
 - Three eligible emails each produce one event.
 - Attachment metadata produces zero events because it establishes no additional operational occurrence.
@@ -380,7 +380,18 @@ The current ground-truth case contains six eligible artifacts and seven extracte
 - The client-approval email produces two events.
 - Unknown event times and actors remain null.
 
-**Current checkpoint:** All 7 Matter Status Brief slots (current-status, last-important-event, waiting-on, next-action, owner, important-date, and significant-information) are derived from structured operational events. Reasoners read typed event semantics rather than parsing human-readable action or object text. `object` is not parsed as a date; omitted `assignedPerson` or `scheduledDate` is UNKNOWN. Current-state ground truth for Smith v. Acme (matter-2026-0142) still matches exactly, including the superseded waiting-on-opposing-counsel event. SUPPORTED claims require a structured fact; invalid `asOf` is UNKNOWN; a missing fact is conservative UNKNOWN.
+The user selects one synthetic matter. Smith v. Acme is the default. Six additional adversarial cases sit beside it, each with authorized evidence, typed operational events, and handwritten ground truth for all 7 slots:
+
+- **Smith Property Acquisition** (`matter-2026-0159`) — cross-matter contamination with Smith v. Acme (shared client and attorney; later same-day events that must not change 0142).
+- **Chen Employment File** (`matter-2026-0160`) — missing evidence (absent assignee, date, wait, and external document).
+- **Rivera v. Northwind** (`matter-2026-0161`) — conflicting evidence (two same-timestamp sources disagree on owner and hearing date).
+- **Patel v. Harbor Logistics** (`matter-2026-0162`) — stale evidence, including a closed-then-reopened matter and a hearing continuance.
+- **Alan Smith v. Westfield** (`matter-2026-0163`) — ambiguous identities (Alan vs Al Smith, shared mailbox, bare `counsel` role).
+- **Al Smith Vendor Review** (`matter-2026-0164`) — cross-matter contamination with the Alan Smith file, plus the same name collision.
+
+Corpus cases and oracles are indexed by [`data/synthetic-corpus.ts`](../../data/synthetic-corpus.ts). Per-matter class notes are in [`data/matters/README.md`](../../data/matters/README.md). Ground truth is written from scenario intent before reasoners run. A corpus isolation test loads every matter's events together and checks each matter's 7 slots against its own oracle; a scorecard reports correct, wrong-confident, and correctly UNKNOWN answers per slot and per matter. The scorecard test pins the three known wrong-confident findings so any additional mismatch fails CI.
+
+**Current checkpoint:** All 7 Matter Status Brief slots (current-status, last-important-event, waiting-on, next-action, owner, important-date, and significant-information) are derived from structured operational events. Reasoners read typed event semantics rather than parsing human-readable action or object text. `object` is not parsed as a date; omitted `assignedPerson` or `scheduledDate` is UNKNOWN. Same-timestamp CONFLICTING compares only records that carry a current value: omitted assignee or date, and past dates, are not competing values, while a cancellation against a set date remains CONFLICTING. Current-state ground truth for Smith v. Acme (matter-2026-0142) still matches exactly, including the superseded waiting-on-opposing-counsel event. Reasoning for a matter may consume only that matter's events. SUPPORTED claims require a structured fact. All 7 slots honor `asOf`: only events at or before that cutoff are considered, and invalid `asOf` is UNKNOWN. A missing fact is conservative UNKNOWN.
 
 ### Capabilities not implemented in the current vertical slice
 
@@ -415,18 +426,18 @@ The initial vertical slice should allow a user to:
 6. Inspect the synthetic source evidence supporting material claims.
 7. See relevant evidence-scope and provenance information.
 
-The synthetic corpus should eventually test:
+The synthetic corpus now tests:
 
 - Explicit matter IDs and matter numbers in email subjects.
 - Unique participants and participants involved in multiple matters.
-- Conversation or thread associations.
-- Important evidence inside attachments.
-- Ambiguous and irrelevant evidence.
-- Similar client names across matters.
+- Similar client names and shared attorneys across matters.
 - Stale, superseded, conflicting, and missing evidence.
+- Re-opened matters and hearing continuances.
+- Ambiguous identities (near-duplicate names, shared mailboxes, underspecified role labels).
 - Unauthorized evidence and evidence belonging to another matter.
+- Matter isolation: loading the full event corpus must not change any matter's 7 slots.
 
-Synthetic cases should have known ground truth so they can serve both development and evaluation.
+Synthetic cases have known ground truth so they can serve both development and evaluation. The corpus scorecard treats wrong-confident SUPPORTED/INFERRED answers as the critical failure mode.
 
 ## Explicit V1 non-goals
 
@@ -473,4 +484,4 @@ This does not mean the architecture is final. The project has enough architectur
 
 The synthetic vertical slice is in progress against synthetic data. It tests the architecture's boundaries and core product outcome without requiring live source-system integrations.
 
-The current implementation reaches deterministic operational-event extraction and current-state reasoning. All 7 brief slots are derived from structured events. Real Clio and Microsoft 365 integrations remain future work.
+The current implementation reaches deterministic operational-event extraction and current-state reasoning. All 7 brief slots are derived from structured events. The synthetic vertical slice now includes a selectable adversarial corpus beside the unchanged Smith v. Acme default. Real Clio and Microsoft 365 integrations remain future work.

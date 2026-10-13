@@ -242,3 +242,88 @@ export type CurrentStateGroundTruth = {
   asOf: string;
   expectations: CurrentStateExpectation[];
 };
+
+export const BRIEF_SLOT_IDS = [
+  "current-status",
+  "last-important-event",
+  "waiting-on",
+  "next-action",
+  "owner",
+  "important-date",
+  "significant-information",
+] as const;
+
+export type BriefSlotId = (typeof BRIEF_SLOT_IDS)[number];
+
+/**
+ * Adversarial class a synthetic corpus case is designed to stress.
+ * Baseline is Smith v. Acme. Every other class must appear at least once.
+ */
+export type AdversarialClass =
+  | "baseline"
+  | "conflicting-evidence"
+  | "missing-evidence"
+  | "stale-evidence"
+  | "cross-matter-contamination"
+  | "ambiguous-identities";
+
+export type SyntheticCorpusCase = {
+  adversarialClass: AdversarialClass;
+  /**
+   * Why this case exists and which slots it is meant to stress.
+   * Ground truth is written from this intent, not from reasoner output.
+   */
+  intent: string;
+  matter: SyntheticMatter;
+  evidence: readonly SyntheticEvidenceItem[];
+  eventGroundTruth: OperationalEventGroundTruth;
+  currentState: CurrentStateGroundTruth;
+};
+
+export type CorpusSlotOutcome =
+  | "correct"
+  | "wrong_confident"
+  | "correctly_unknown"
+  | "false_unknown"
+  | "state_mismatch";
+
+export type CorpusSlotScore = {
+  matterId: string;
+  matterName: string;
+  adversarialClass: AdversarialClass;
+  slotId: BriefSlotId;
+  expectedState: EvidenceState;
+  expectedValue: string | null;
+  actualState: EvidenceState;
+  actualValue: string;
+  outcome: CorpusSlotOutcome;
+  wrongConfident: boolean;
+  isolationLeak: boolean;
+  rationale: string;
+};
+
+export type CorpusScorecard = {
+  matterCount: number;
+  slotCount: number;
+  correct: number;
+  wrongConfident: number;
+  correctlyUnknown: number;
+  falseUnknown: number;
+  stateMismatch: number;
+  isolationLeaks: number;
+  byMatter: Array<{
+    matterId: string;
+    matterName: string;
+    adversarialClass: AdversarialClass;
+    correct: number;
+    wrongConfident: number;
+    correctlyUnknown: number;
+  }>;
+  bySlot: Array<{
+    slotId: BriefSlotId;
+    correct: number;
+    wrongConfident: number;
+    correctlyUnknown: number;
+  }>;
+  slots: CorpusSlotScore[];
+};
