@@ -10,7 +10,7 @@ import {
 import { syntheticCurrentStateGroundTruth } from "@/data/synthetic-current-state";
 import { buildEligibleEvidenceSet } from "@/lib/evidence-processing";
 import { extractOperationalEvents } from "@/lib/operational-events";
-import { deriveCurrentStatusSlot, deriveLastImportantEventSlot, deriveWaitingOnSlot, deriveNextActionSlot, deriveOwnerSlot, deriveImportantDateSlot } from "@/lib/current-state-reasoning";
+import { deriveCurrentStatusSlot, deriveLastImportantEventSlot, deriveWaitingOnSlot, deriveNextActionSlot, deriveOwnerSlot, deriveImportantDateSlot, deriveSignificantNewInformationSlot } from "@/lib/current-state-reasoning";
 import { EvidencePanel } from "@/components/evidence-panel";
 import { StatusBrief } from "@/components/status-brief";
 import { ArrowRightIcon, DocumentIcon, LockIcon } from "@/components/icons";
@@ -71,6 +71,15 @@ const derivedImportantDateSlot = deriveImportantDateSlot(
   syntheticCurrentStateGroundTruth.asOf,
 );
 
+const derivedSignificantInformationSlot = deriveSignificantNewInformationSlot(
+  operationalEvents,
+  syntheticMatterBrief.matter.id,
+  syntheticMatterBrief.matter,
+  evidenceProcessing.eligibleEvidence,
+  syntheticRequestingUser,
+  syntheticCurrentStateGroundTruth.asOf,
+);
+
 // Build the brief with derived slots and predefined other slots
 const matterBrief = {
   ...syntheticMatterBrief,
@@ -81,6 +90,7 @@ const matterBrief = {
     if (claim.id === "next-action") return derivedNextActionSlot;
     if (claim.id === "owner") return derivedOwnerSlot;
     if (claim.id === "important-date") return derivedImportantDateSlot;
+    if (claim.id === "significant-information") return derivedSignificantInformationSlot;
     return claim;
   }),
 };
@@ -210,9 +220,10 @@ export function MatterMindApp() {
                   No status brief shown
                 </h2>
                 <p className="mt-2 text-sm leading-6 text-slate-600">
-                  This increment derives the current-status, last-important-event, waiting-on,
-                  next-action, owner, and important-date slots from operational events. The other 1 slot remains predefined. Show
-                  the brief to review claims, evidence states, and source provenance.
+                  This increment derives all 7 slots from operational events:
+                  current-status, last-important-event, waiting-on, next-action, owner,
+                  important-date, and significant-information. Show the brief to review
+                  claims, evidence states, and source provenance.
                 </p>
               </div>
             </section>

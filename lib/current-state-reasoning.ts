@@ -155,6 +155,15 @@ const OWN_SIDE_ROLE_LABELS = new Set([
   "firm paralegal",
   "paralegal",
 ]);
+const EXTERNAL_ROLE_LABELS = new Set([
+  "opposing counsel",
+  "opposing attorney",
+  "court",
+  "the court",
+  "judge",
+  "third party",
+  "third-party",
+]);
 const COURT_ROLE_LABELS = new Set(["court", "court clerk"]);
 
 function normalizedActorLabel(actor: string): string {
@@ -163,6 +172,18 @@ function normalizedActorLabel(actor: string): string {
 
 function actorEqualsName(actor: string, personName: string): boolean {
   return normalizedActorLabel(actor) === personName.trim().toLowerCase();
+}
+
+/**
+ * Helper: Check if an actor represents an external party.
+ * Returns true for known external roles (opposing counsel, court, third party).
+ */
+function isExternalActor(actor: string | null): boolean {
+  if (!actor) {
+    return false;
+  }
+  const label = normalizedActorLabel(actor);
+  return EXTERNAL_ROLE_LABELS.has(label);
 }
 
 function isClientActor(actor: string | null, matter: SyntheticMatter): boolean {
@@ -1920,4 +1941,123 @@ export function deriveImportantDateSlot(
   }
 
   return unknownImportantDate();
+}
+
+function unknownSignificantNewInformation(): StatusClaim {
+  return {
+    id: "significant-information",
+    label: "Significant New Information",
+    value: "Unknown",
+    state: "UNKNOWN",
+    evidenceIds: [],
+  };
+}
+
+function significantNewInformationClaim(
+  value: string,
+  state: "SUPPORTED" | "INFERRED",
+  evidenceId: string
+): StatusClaim {
+  return {
+    id: "significant-information",
+    label: "Significant New Information",
+    value,
+    state,
+    evidenceIds: [evidenceId],
+  };
+}
+
+/**
+ * Helper: Format the significant new information value from a DOCUMENT_SENT event.
+ * Template: "{Actor} supplied {object} on {date}."
+ * Lowercases the first letter of object for natural sentence flow.
+ */
+function formatSignificantNewInformation(event: OperationalEvent): string {
+  const actor = event.actor || "External party";
+  const rawObject = event.object || "document";
+  const object = rawObject.charAt(0).toLowerCase() + rawObject.slice(1);
+  const eventTimestamp = event.occurredAt ?? event.provenance.sourceRecordedAt;
+  const eventDate = new Date(eventTimestamp);
+  const formattedDate = eventDate.toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+  return `${actor} supplied ${object} on ${formattedDate}.`;
+}
+
+/**
+ * Derives the significant-information slot from operational events.
+ *
+ * "Significant information" is defined as evidence or documents
+ * received from external parties (not the client, not our firm/attorney).
+ * This slot identifies the most recent substantive information received
+ * from opposing counsel, courts, third parties, or other external sources.
+ *
+ * Structured data first: the latest DOCUMENT_SENT event from an external
+ * party at or before asOf, identified via actor matching.
+ * 
+ * External party detection: a sender counts as external ONLY when its actor
+ * matches a known external role (opposing counsel, court, third party, etc.).
+ * Everything else gives UNKNOWN, regardless of email domain.
+ * 
+ * Events from the client or our firm (responsible attorney, requesting user,
+ * firm staff) are excluded. Events that cannot be classified (unknown
+ * sender, no identifiable external role) give UNKNOWN.
+ *
+ * No text fallback is used: determining whether an event is from an external
+ * party requires a structured actor matching a known external role.
+ *
+ * asOf is explicit; an invalid asOf gives UNKNOWN. Only events at or before
+ * asOf are considered.
+ *
+ * Format: "{Actor} supplied {object} on {date}."
+ */
+export function deriveSignificantNewInformationSlot(
+  events: OperationalEvent[],
+  matterId: string,
+  matter: SyntheticMatter,
+  eligibleEvidence: EligibleEvidenceItem[],
+  requestingUser: SyntheticUser,
+  asOf: string
+): StatusClaim {
+  const asOfTime = parseAsOfTime(asOf);
+  if (asOfTime === null) {
+    return unknownSignificantNewInformation();
+  }
+
+  const documentEvents = events.filter(
+    (event) =>
+      event.matterId === matterId &&
+      event.eventType === "DOCUMENT_SENT" &&
+      getEventTimestamp(event) <= asOfTime
+  );
+
+  if (documentEvents.length === 0) {
+    return unknownSignificantNewInformation();
+  }
+
+  const externalDocumentEvents = documentEvents.filter((event) => {
+    // Exclude client and own side actors
+    if (isClientActor(event.actor, matter)) {
+      return false;
+    }
+
+    // Accept only if actor matches a known external role
+    return isExternalActor(event.actor);
+  });
+
+  if (externalDocumentEvents.length === 0) {
+    return unknownSignificantNewInformation();
+  }
+
+  const latest = getLatestEvent(externalDocumentEvents);
+  const evidenceId = latest.provenance.sourceArtifactId;
+
+  return significantNewInformationClaim(
+    formatSignificantNewInformation(latest),
+    "SUPPORTED",
+    evidenceId
+  );
 }
