@@ -34,7 +34,7 @@ Key characteristics:
 - **Read-only:** MatterMind takes no autonomous operational actions. Clio remains the system of record.
 - **Source boundary hypothesis (unproven):** MatterMind V1 intends to reconstruct state from the selected Clio matter and its associated Clio evidence, plus matter-relevant email and attachments in the requesting user's authorized Microsoft 365 scope (see [mvp-selection.md](./mvp-selection.md) and [v1-technical-feasibility.md](./v1-technical-feasibility.md)). This remains a hypothesis to validate, not a proven-sufficient boundary.
 - **Operational reasoning:** Evidence flows through extraction, chronology, supersession, and current-state reasoning (see [mattermind-v1-architecture.md](../architecture/mattermind-v1-architecture.md)). Historical events remain valid even when later events supersede their operational significance.
-- **Current implementation status:** The Synthetic Vertical Slice implements deterministic operational-event extraction. Six slots (current-status, last-important-event, waiting-on, next-action, owner, and important-date) are now derived from operational events using deterministic supersession logic. The remaining Matter Status Brief slot remains predefined synthetic output. Full current-state reasoning across all slots is not yet implemented.
+- **Current implementation status:** The Synthetic Vertical Slice implements deterministic operational-event extraction and current-state reasoning. All 7 Matter Status Brief slots (current-status, last-important-event, waiting-on, next-action, owner, important-date, and significant-information) are derived from structured operational events. Reasoners read typed event semantics; they do not parse human-readable action or object text. Omitted `assignedPerson` or `scheduledDate` is UNKNOWN; `object` is not parsed as a date. There is no remaining predefined brief slot.
 
 MatterMind prioritizes evidence-grounded status reconstruction over activity summarization.
 
@@ -73,9 +73,9 @@ MatterMind's differentiation is in its focus on **evidence-grounded current-stat
 ## Implications for V1
 
 1. **UI copy must remain honest:** MatterMind should describe itself as evidence-grounded current-state reconstruction, not as "Clio but better" or a Clio Catch up replacement.
-2. **Derived vs predefined distinction:** As more Matter Status Brief slots become derived from operational events, the UI should reflect which slots are actively reconstructed and which remain synthetic placeholders. The current increment derives five slots (current-status, last-important-event, waiting-on, next-action, and owner); the other two slots are still predefined.
+2. **Derived vs predefined distinction:** All 7 Matter Status Brief slots are derived from structured operational events. The UI should describe the brief as reconstructed from events, not as a mix of derived and predefined placeholders.
 3. **Avoid misleading claims:** MatterMind should not market itself as improving on Clio's activity-summary features or Clio AI Actions.
-4. **Update this comparison:** As MatterMind's capabilities evolve and more slots become derived, this comparison should be revised to reflect actual product behavior rather than architectural intent.
+4. **Update this comparison:** As MatterMind's capabilities evolve (for example, real-source integration), this comparison should be revised to reflect actual product behavior rather than architectural intent. All 7 slots are already derived from structured events.
 5. **Positioning:** MatterMind complements Clio by reconstructing current state from a broader evidence boundary (Clio + email hypothesis), with explicit grounding and uncertainty. It does not replace Clio Manage or Clio AI features.
 
 ## Decisions recorded
@@ -105,6 +105,6 @@ MatterMind must respect source-system permissions and never broaden a user's acc
 This document should be updated whenever:
 
 - Clio releases significant changes to Catch up, AI Actions, or related AI features.
-- MatterMind's slot-derivation status changes (more slots become derived vs predefined).
+- MatterMind's current-state derivation changes (for example, new structured facts or real-source events). All 7 slots are already derived from structured events.
 - The V1 source boundary hypothesis is validated, refined, or replaced.
 - New evaluation findings materially change MatterMind's risk posture or differentiation.

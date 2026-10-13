@@ -12,6 +12,14 @@ import { buildEligibleEvidenceSet } from "@/lib/evidence-processing";
 import { extractOperationalEvents } from "@/lib/operational-events";
 import { deriveCurrentStatusSlot, deriveLastImportantEventSlot, deriveWaitingOnSlot, deriveNextActionSlot, deriveOwnerSlot, deriveImportantDateSlot, deriveSignificantNewInformationSlot } from "@/lib/current-state-reasoning";
 
+function assertDefined<T>(
+  value: T | undefined | null,
+  message = "expected a defined value",
+): asserts value is T {
+  assert.notEqual(value, undefined, message);
+  assert.notEqual(value, null, message);
+}
+
 const evidenceProcessing = buildEligibleEvidenceSet({
   user: syntheticRequestingUser,
   selectedMatter: syntheticMatters[0],
@@ -24,17 +32,20 @@ const extractedEvents = extractOperationalEvents({
   matterId: syntheticMatters[0].id,
 });
 
+const CURRENT_STATUS_AS_OF = "2026-12-31T23:59:59Z";
+
 test("derived current-status slot matches ground-truth expectation", () => {
   const derived = deriveCurrentStatusSlot(
     extractedEvents,
     syntheticMatters[0].id,
     syntheticMatters[0],
+    syntheticCurrentStateGroundTruth.asOf,
   );
   const expectation = syntheticCurrentStateGroundTruth.expectations.find(
     (exp) => exp.slotId === "current-status",
   );
 
-  assert.ok(expectation, "Ground truth has current-status expectation");
+  assertDefined(expectation, "Ground truth has current-status expectation");
 
   assert.equal(
     derived.id,
@@ -78,7 +89,7 @@ test("derived slot identifies superseded waiting-state event", () => {
     (exp) => exp.slotId === "current-status",
   );
 
-  assert.ok(expectation, "Ground truth has current-status expectation");
+  assertDefined(expectation, "Ground truth has current-status expectation");
   assert.equal(
     expectation.supersededEventIds.length,
     1,
@@ -98,11 +109,8 @@ test("derived slot identifies superseded waiting-state event", () => {
     expectation.supportingEventIds.includes(e.eventId),
   );
 
-  assert.ok(supersededEvent, "Superseded event exists in extraction");
-  assert.ok(
-    supersedingEvents.length > 0,
-    "At least one superseding event exists",
-  );
+  assertDefined(supersededEvent, "Superseded event exists in extraction");
+  assert.equal(supersedingEvents.length > 0, true, "At least one superseding event exists");
 
   const supersededTime = new Date(
     supersededEvent.provenance.sourceRecordedAt,
@@ -112,10 +120,7 @@ test("derived slot identifies superseded waiting-state event", () => {
     const supersedingTime = new Date(
       superseding.provenance.sourceRecordedAt,
     ).getTime();
-    assert.ok(
-      supersedingTime > supersededTime,
-      `Superseding event ${superseding.eventId} recorded after superseded event`,
-    );
+    assert.equal(supersedingTime > supersededTime, true, `Superseding event ${superseding.eventId} recorded after superseded event`);
   }
 });
 
@@ -129,6 +134,7 @@ test("mutation: removing document-sent event breaks derivation", () => {
     eventsWithoutDocSent,
     syntheticMatters[0].id,
     syntheticMatters[0],
+    syntheticCurrentStateGroundTruth.asOf,
   );
 
   // Without the document-sent event, the derived status should differ
@@ -137,15 +143,11 @@ test("mutation: removing document-sent event breaks derivation", () => {
     (exp) => exp.slotId === "current-status",
   );
 
-  assert.ok(expectation, "Ground truth has current-status expectation");
+  assertDefined(expectation, "Ground truth has current-status expectation");
 
   // The derived value should NOT match the expected value when the
   // document-sent event is missing, because the waiting state is no longer superseded
-  assert.notEqual(
-    derived.value,
-    expectation.expectedValue,
-    "Removing document-sent event changes the derived status",
-  );
+  assert.notEqual(derived.value, expectation.expectedValue, "Removing document-sent event changes the derived status");
 });
 
 test("mutation: removing approval-requested event breaks derivation", () => {
@@ -158,20 +160,17 @@ test("mutation: removing approval-requested event breaks derivation", () => {
     eventsWithoutApproval,
     syntheticMatters[0].id,
     syntheticMatters[0],
+    syntheticCurrentStateGroundTruth.asOf,
   );
 
   const expectation = syntheticCurrentStateGroundTruth.expectations.find(
     (exp) => exp.slotId === "current-status",
   );
 
-  assert.ok(expectation, "Ground truth has current-status expectation");
+  assertDefined(expectation, "Ground truth has current-status expectation");
 
   // Without approval-requested, we cannot derive the same status
-  assert.notEqual(
-    derived.value,
-    expectation.expectedValue,
-    "Removing approval-requested event changes the derived status",
-  );
+  assert.notEqual(derived.value, expectation.expectedValue, "Removing approval-requested event changes the derived status");
 });
 
 test("derived slot uses only non-superseded events as evidence", () => {
@@ -179,13 +178,14 @@ test("derived slot uses only non-superseded events as evidence", () => {
     extractedEvents,
     syntheticMatters[0].id,
     syntheticMatters[0],
+    syntheticCurrentStateGroundTruth.asOf,
   );
 
   const expectation = syntheticCurrentStateGroundTruth.expectations.find(
     (exp) => exp.slotId === "current-status",
   );
 
-  assert.ok(expectation, "Ground truth has current-status expectation");
+  assertDefined(expectation, "Ground truth has current-status expectation");
 
   // Map evidence artifact IDs back to event IDs
   const artifactToEventsMap = new Map<string, string[]>();
@@ -208,10 +208,7 @@ test("derived slot uses only non-superseded events as evidence", () => {
 
   // Verify that superseded events are not used
   for (const supersededId of expectation.supersededEventIds) {
-    assert.ok(
-      !derivedEventIds.has(supersededId),
-      `Superseded event ${supersededId} is not used in derived evidence`,
-    );
+    assert.equal(!derivedEventIds.has(supersededId), true, `Superseded event ${supersededId} is not used in derived evidence`);
   }
 });
 
@@ -220,11 +217,13 @@ test("derivation is deterministic across multiple calls", () => {
     extractedEvents,
     syntheticMatters[0].id,
     syntheticMatters[0],
+    syntheticCurrentStateGroundTruth.asOf,
   );
   const derived2 = deriveCurrentStatusSlot(
     extractedEvents,
     syntheticMatters[0].id,
     syntheticMatters[0],
+    syntheticCurrentStateGroundTruth.asOf,
   );
 
   assert.deepEqual(
@@ -240,6 +239,7 @@ test("derivation uses only events from the specified matter", () => {
     extractedEvents,
     syntheticMatters[0].id,
     syntheticMatters[0],
+    syntheticCurrentStateGroundTruth.asOf,
   );
 
   // All evidence IDs should map to events belonging to the selected matter
@@ -252,7 +252,7 @@ test("derivation uses only events from the specified matter", () => {
 
   for (const artifactId of derived.evidenceIds) {
     const event = eventMap.get(artifactId);
-    assert.ok(event, `Evidence artifact ${artifactId} has a corresponding event`);
+    assertDefined(event, `Evidence artifact ${artifactId} has a corresponding event`);
     assert.equal(
       event.matterId,
       syntheticMatters[0].id,
@@ -282,6 +282,10 @@ test("non-fixture matter: contract draft awaiting attorney review", () => {
       actor: "Legal Team",
       action: "Sent draft contract for review",
       object: "Draft contract",
+      semantics: {
+        documentForm: "draft",
+        documentSubject: "contract",
+      },
       extractionMethod: "SYNTHETIC_GROUND_TRUTH",
       provenance: {
         sourceArtifactId: "test-artifact-1",
@@ -299,6 +303,9 @@ test("non-fixture matter: contract draft awaiting attorney review", () => {
       actor: "Associate",
       action: "Requested attorney review of the contract",
       object: "Draft contract",
+      semantics: {
+        approvalKind: "attorney_review",
+      },
       extractionMethod: "SYNTHETIC_GROUND_TRUTH",
       provenance: {
         sourceArtifactId: "test-artifact-2",
@@ -314,6 +321,7 @@ test("non-fixture matter: contract draft awaiting attorney review", () => {
     syntheticEvents,
     "test-matter-001",
     testMatter,
+    CURRENT_STATUS_AS_OF,
   );
 
   assert.equal(derived.state, "SUPPORTED");
@@ -341,6 +349,10 @@ test("non-fixture matter: proposed agreement from client", () => {
       actor: "Client",
       action: "Sent proposed terms",
       object: "Proposed agreement",
+      semantics: {
+        documentForm: "proposed",
+        documentSubject: "agreement",
+      },
       extractionMethod: "SYNTHETIC_GROUND_TRUTH",
       provenance: {
         sourceArtifactId: "test-artifact-3",
@@ -358,6 +370,9 @@ test("non-fixture matter: proposed agreement from client", () => {
       actor: "Attorney",
       action: "Requested client approval on proposed terms",
       object: "Proposed agreement",
+      semantics: {
+        approvalKind: "client_approval",
+      },
       extractionMethod: "SYNTHETIC_GROUND_TRUTH",
       provenance: {
         sourceArtifactId: "test-artifact-4",
@@ -373,6 +388,7 @@ test("non-fixture matter: proposed agreement from client", () => {
     syntheticEvents,
     "test-matter-002",
     testMatter,
+    CURRENT_STATUS_AS_OF,
   );
 
   assert.equal(derived.state, "SUPPORTED");
@@ -449,14 +465,15 @@ test("non-fixture matter: waiting superseded by later action", () => {
     syntheticEvents,
     "test-matter-003",
     testMatter,
+    CURRENT_STATUS_AS_OF,
   );
 
   // The waiting state should be superseded; status should reflect the later events
   assert.equal(derived.state, "SUPPORTED");
   // Should NOT mention "waiting for opposing counsel response"
-  assert.ok(!derived.value.toLowerCase().includes("waiting for opposing counsel"));
+  assert.equal(!derived.value.toLowerCase().includes("waiting for opposing counsel"), true);
   // Should reference the approval request
-  assert.ok(derived.value.toLowerCase().includes("awaiting"));
+  assert.equal(derived.value.toLowerCase().includes("awaiting"), true);
   assert.deepEqual(derived.evidenceIds, ["test-artifact-6", "test-artifact-7"]);
 });
 
@@ -513,14 +530,15 @@ test("event ordering: latest by timestamp, not array position", () => {
     syntheticEvents,
     "test-matter-004",
     testMatter,
+    CURRENT_STATUS_AS_OF,
   );
 
   // Should use the chronologically later event, not the last in array
   assert.equal(derived.state, "SUPPORTED");
   assert.equal(derived.evidenceIds.length, 2);
   // Should reference both events in chronological order
-  assert.ok(derived.evidenceIds.includes("test-artifact-8"));
-  assert.ok(derived.evidenceIds.includes("test-artifact-9"));
+  assert.equal(derived.evidenceIds.includes("test-artifact-8"), true);
+  assert.equal(derived.evidenceIds.includes("test-artifact-9"), true);
 });
 
 test("supersession comparison: earlier event must be superseded by later event", () => {
@@ -594,27 +612,19 @@ test("supersession comparison: earlier event must be superseded by later event",
     syntheticEvents,
     "test-matter-supersession",
     testMatter,
+    CURRENT_STATUS_AS_OF,
   );
 
   // The status should be based on the later events (doc + approval), not the waiting event
   // If comparison is flipped (<), the waiting event won't be superseded
   
   // Check that the derived value doesn't say "Waiting for documents"
-  assert.ok(
-    !derived.value.includes("Waiting for documents"),
-    `Status should not be "Waiting for documents" because that event is superseded. Got: ${derived.value}`,
-  );
+  assert.equal(!derived.value.includes("Waiting for documents"), true, `Status should not be "Waiting for documents" because that event is superseded. Got: ${derived.value}`);
   
   // Should reference the later events, not the waiting event
-  assert.ok(
-    !derived.evidenceIds.includes("test-artifact-wait"),
-    "Should not reference the superseded waiting event",
-  );
-  assert.ok(
-    derived.evidenceIds.includes("test-artifact-doc") ||
-      derived.evidenceIds.includes("test-artifact-approval"),
-    "Should reference the later doc or approval events",
-  );
+  assert.equal(!derived.evidenceIds.includes("test-artifact-wait"), true, "Should not reference the superseded waiting event");
+  assert.equal(derived.evidenceIds.includes("test-artifact-doc") ||
+      derived.evidenceIds.includes("test-artifact-approval"), true, "Should reference the later doc or approval events");
 });
 
 test("supersession: waiting event superseded by document-sent (no approval)", () => {
@@ -671,18 +681,13 @@ test("supersession: waiting event superseded by document-sent (no approval)", ()
     syntheticEvents,
     "test-m-flip",
     testMatter,
+    CURRENT_STATUS_AS_OF,
   );
 
   // With correct comparison (>): waiting is superseded, status describes the document event
   // With flipped comparison (<): waiting is NOT superseded, status says "Waiting for brief"
-  assert.ok(
-    !derived.value.includes("Waiting for brief"),
-    `Should not show superseded waiting state. Got: ${derived.value}`,
-  );
-  assert.ok(
-    !derived.evidenceIds.includes("art-wait"),
-    "Should not reference superseded waiting event",
-  );
+  assert.equal(!derived.value.includes("Waiting for brief"), true, `Should not show superseded waiting state. Got: ${derived.value}`);
+  assert.equal(!derived.evidenceIds.includes("art-wait"), true, "Should not reference superseded waiting event");
 });
 
 test("non-client possessive approval: Judge Lee's approval != client approval", () => {
@@ -705,6 +710,10 @@ test("non-client possessive approval: Judge Lee's approval != client approval", 
       actor: "Attorney",
       action: "Sent proposed order",
       object: "Proposed order",
+      semantics: {
+        documentForm: "proposed",
+        documentSubject: "order",
+      },
       extractionMethod: "SYNTHETIC_GROUND_TRUTH",
       provenance: {
         sourceArtifactId: "test-art-order",
@@ -722,6 +731,10 @@ test("non-client possessive approval: Judge Lee's approval != client approval", 
       actor: "Attorney",
       action: "Requested Judge Lee's approval of the proposed order",
       object: "Proposed order",
+      semantics: {
+        approvalKind: "approval",
+        namedApprover: "Judge Lee",
+      },
       extractionMethod: "SYNTHETIC_GROUND_TRUTH",
       provenance: {
         sourceArtifactId: "test-art-judge-req",
@@ -737,17 +750,17 @@ test("non-client possessive approval: Judge Lee's approval != client approval", 
     syntheticEvents,
     "test-matter-judge",
     testMatter,
+    CURRENT_STATUS_AS_OF,
   );
 
-  // Should NOT say "client approval" because Judge Lee is not the client (Jane Doe is)
-  assert.ok(
-    !derived.value.includes("client approval"),
-    `Should not say 'client approval' when approval is from Judge Lee, not client Jane Doe. Got: ${derived.value}`,
+  assert.equal(
+    derived.value,
+    "Proposed order is awaiting Judge Lee's approval.",
   );
-  // Should mention Judge Lee's name or just say "approval"
-  assert.ok(
-    derived.value.includes("Judge Lee") || derived.value.endsWith("approval."),
-    `Should mention Judge Lee or use generic 'approval'. Got: ${derived.value}`,
+  assert.equal(
+    derived.value.includes("client approval"),
+    false,
+    "Judge Lee is not the client",
   );
 });
 
@@ -788,6 +801,9 @@ test("current-status: object text keeps original proper-noun casing", () => {
       actor: "Attorney",
       action: "Requested attorney review of Judge Lee's ruling",
       object: "Judge Lee's ruling",
+      semantics: {
+        approvalKind: "attorney_review",
+      },
       extractionMethod: "SYNTHETIC_GROUND_TRUTH",
       provenance: {
         sourceArtifactId: "test-art-status-casing-approval",
@@ -803,14 +819,16 @@ test("current-status: object text keeps original proper-noun casing", () => {
     syntheticEvents,
     "test-matter-status-casing",
     testMatter,
+    CURRENT_STATUS_AS_OF,
   );
 
-  assert.ok(
-    derived.value.includes("Judge Lee's ruling"),
-    "Current-status object must keep proper-noun casing",
+  assert.match(
+    derived.value,
+    /Judge Lee's ruling/,
   );
-  assert.ok(
-    !derived.value.includes("judge lee's ruling"),
+  assert.equal(
+    derived.value.includes("judge lee's ruling"),
+    false,
     "Current-status object must not be lowercased",
   );
 });
@@ -867,11 +885,333 @@ test("timestamp tie-breaker: uses eventId lexicographically", () => {
     syntheticEvents,
     "test-matter-005",
     testMatter,
+    CURRENT_STATUS_AS_OF,
   );
 
   // With identical timestamps, should use the event with higher eventId (zzz > aaa)
   assert.equal(derived.state, "SUPPORTED");
   assert.equal(derived.evidenceIds[0], "test-artifact-11");
+});
+
+test("current-status: later settled recorded status supersedes awaiting client approval", () => {
+  const matterId = "test-matter-status-settled-after-approval";
+  const testMatter = {
+    id: matterId,
+    matterNumber: "2026-TEST-SETTLED",
+    name: "Settled After Approval",
+    client: "Jordan Smith",
+    responsibleAttorney: "Alex Thompson",
+    status: "Active" as const,
+    participantIds: [],
+  };
+  const syntheticEvents: OperationalEvent[] = [
+    {
+      eventId: `${matterId}-doc`,
+      matterId,
+      eventType: "DOCUMENT_SENT",
+      occurredAt: "2026-09-16T10:00:00Z",
+      actor: "Opposing counsel",
+      action: "Sent revised settlement language.",
+      object: "Revised settlement language",
+      semantics: {
+        documentForm: "revised",
+        documentSubject: "settlement",
+      },
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: `${matterId}-artifact-doc`,
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-16T10:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "revised settlement language",
+      },
+    },
+    {
+      eventId: `${matterId}-approval`,
+      matterId,
+      eventType: "APPROVAL_REQUESTED",
+      occurredAt: "2026-09-17T12:00:00Z",
+      actor: "Alex Thompson",
+      action: "Requested client approval before responding.",
+      object: "Revised settlement language",
+      semantics: {
+        approvalKind: "client_approval",
+      },
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: `${matterId}-artifact-approval`,
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-17T12:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "approval before responding",
+      },
+    },
+    {
+      eventId: `${matterId}-settled`,
+      matterId,
+      eventType: "MATTER_STATUS_RECORDED",
+      occurredAt: "2026-09-20T09:00:00Z",
+      actor: null,
+      action: "Recorded the matter status as Settled.",
+      object: "Matter status",
+      semantics: {
+        recordedStatus: "settled",
+      },
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: `${matterId}-artifact-settled`,
+        sourceSystem: "Clio",
+        sourceRecordedAt: "2026-09-20T09:00:00Z",
+        associationMethod: "AUTHORITATIVE_SOURCE_RELATIONSHIP",
+        evidenceExcerpt: "Matter status: Settled",
+      },
+    },
+  ];
+
+  const derived = deriveCurrentStatusSlot(syntheticEvents, matterId, testMatter, CURRENT_STATUS_AS_OF);
+  assert.equal(derived.state, "SUPPORTED");
+  assert.equal(derived.value, "The matter is settled.");
+  assert.equal(
+    derived.value.includes("awaiting client approval"),
+    false,
+    "A later settled status must not leave the brief awaiting client approval",
+  );
+  assert.deepEqual(derived.evidenceIds, [`${matterId}-artifact-settled`]);
+});
+
+function makeCurrentStatusMatter(id: string): SyntheticMatter {
+  return {
+    id,
+    matterNumber: id,
+    name: "Current Status Test",
+    client: "Jordan Smith",
+    responsibleAttorney: "Alex Thompson",
+    status: "Active",
+    participantIds: [],
+  };
+}
+
+function makeCurrentStatusEvent(
+  event: Omit<OperationalEvent, "extractionMethod">,
+): OperationalEvent {
+  return {
+    ...event,
+    extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+  };
+}
+
+function approvalAwaitingEvents(matterId: string): OperationalEvent[] {
+  return [
+    makeCurrentStatusEvent({
+      eventId: `${matterId}-doc`,
+      matterId,
+      eventType: "DOCUMENT_SENT",
+      occurredAt: "2026-09-16T10:00:00Z",
+      actor: "Opposing counsel",
+      action: "Sent revised settlement language.",
+      object: "Revised settlement language",
+      semantics: {
+        documentForm: "revised",
+        documentSubject: "settlement",
+      },
+      provenance: {
+        sourceArtifactId: `${matterId}-artifact-doc`,
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-16T10:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "revised settlement language",
+      },
+    }),
+    makeCurrentStatusEvent({
+      eventId: `${matterId}-approval`,
+      matterId,
+      eventType: "APPROVAL_REQUESTED",
+      occurredAt: "2026-09-17T17:45:00Z",
+      actor: "Alex Thompson",
+      action: "Requested client approval before responding.",
+      object: "Revised settlement language",
+      semantics: {
+        approvalKind: "client_approval",
+      },
+      provenance: {
+        sourceArtifactId: `${matterId}-artifact-approval`,
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-17T17:45:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "approval before responding",
+      },
+    }),
+  ];
+}
+
+function recordedStatusEvent(
+  matterId: string,
+  status: "active" | "settled" | "closed",
+  occurredAt: string,
+  eventId = `${matterId}-${status}`,
+): OperationalEvent {
+  const label = status.charAt(0).toUpperCase() + status.slice(1);
+  return makeCurrentStatusEvent({
+    eventId,
+    matterId,
+    eventType: "MATTER_STATUS_RECORDED",
+    occurredAt,
+    actor: null,
+    action: `Recorded the matter status as ${label}.`,
+    object: "Matter status",
+    semantics: {
+      recordedStatus: status,
+    },
+    provenance: {
+      sourceArtifactId: `${matterId}-artifact-${status}`,
+      sourceSystem: "Clio",
+      sourceRecordedAt: occurredAt,
+      associationMethod: "AUTHORITATIVE_SOURCE_RELATIONSHIP",
+      evidenceExcerpt: `Matter status: ${label}`,
+    },
+  });
+}
+
+test("current-status: settled before the approval request does not supersede", () => {
+  const matterId = "test-matter-status-settled-before";
+  const derived = deriveCurrentStatusSlot(
+    [
+      recordedStatusEvent(matterId, "settled", "2026-09-16T09:00:00Z"),
+      ...approvalAwaitingEvents(matterId),
+    ],
+    matterId,
+    makeCurrentStatusMatter(matterId),
+    CURRENT_STATUS_AS_OF,
+  );
+  assert.equal(derived.value, "Settlement revisions are awaiting client approval.");
+  assert.notEqual(derived.value, "The matter is settled.");
+});
+
+test("current-status: later closed recorded status supersedes awaiting client approval", () => {
+  const matterId = "test-matter-status-closed-after";
+  const derived = deriveCurrentStatusSlot(
+    [
+      ...approvalAwaitingEvents(matterId),
+      recordedStatusEvent(matterId, "closed", "2026-09-20T09:00:00Z"),
+    ],
+    matterId,
+    makeCurrentStatusMatter(matterId),
+    CURRENT_STATUS_AS_OF,
+  );
+  assert.equal(derived.state, "SUPPORTED");
+  assert.equal(derived.value, "The matter is closed.");
+  assert.notEqual(derived.value, "The matter is settled.");
+  assert.deepEqual(derived.evidenceIds, [`${matterId}-artifact-closed`]);
+});
+
+test("current-status: waiting-on followed by settled uses the recorded status", () => {
+  const matterId = "test-matter-status-waiting-then-settled";
+  const derived = deriveCurrentStatusSlot(
+    [
+      makeCurrentStatusEvent({
+        eventId: `${matterId}-waiting`,
+        matterId,
+        eventType: "WAITING_STATE_REPORTED",
+        occurredAt: "2026-09-12T16:15:00Z",
+        actor: "Rachel Morgan",
+        action: "Reported waiting for opposing counsel.",
+        object: "Revised settlement language",
+        provenance: {
+          sourceArtifactId: `${matterId}-artifact-waiting`,
+          sourceSystem: "Outlook",
+          sourceRecordedAt: "2026-09-12T16:15:00Z",
+          associationMethod: "EXPLICIT_MATTER_ID",
+          evidenceExcerpt: "waiting for opposing counsel",
+        },
+      }),
+      recordedStatusEvent(matterId, "settled", "2026-09-20T09:00:00Z"),
+    ],
+    matterId,
+    makeCurrentStatusMatter(matterId),
+    CURRENT_STATUS_AS_OF,
+  );
+  assert.equal(derived.state, "SUPPORTED");
+  assert.equal(derived.value, "The matter is settled.");
+  assert.equal(
+    derived.value.includes("Waiting for"),
+    false,
+    "A later settled status must supersede an open waiting state",
+  );
+  assert.deepEqual(derived.evidenceIds, [`${matterId}-artifact-settled`]);
+});
+
+test("current-status: re-opened active status after settled does not stay settled", () => {
+  const matterId = "test-matter-status-reopened";
+  const derived = deriveCurrentStatusSlot(
+    [
+      ...approvalAwaitingEvents(matterId),
+      recordedStatusEvent(matterId, "settled", "2026-09-17T19:00:00Z"),
+      recordedStatusEvent(matterId, "active", "2026-09-17T20:00:00Z"),
+    ],
+    matterId,
+    makeCurrentStatusMatter(matterId),
+    CURRENT_STATUS_AS_OF,
+  );
+  assert.equal(derived.value, "Settlement revisions are awaiting client approval.");
+  assert.notEqual(derived.value, "The matter is settled.");
+});
+
+test("current-status: settled after asOf does not supersede", () => {
+  const matterId = "test-matter-status-settled-after-asof";
+  const derived = deriveCurrentStatusSlot(
+    [
+      ...approvalAwaitingEvents(matterId),
+      recordedStatusEvent(matterId, "settled", "2026-09-20T09:00:00Z"),
+    ],
+    matterId,
+    makeCurrentStatusMatter(matterId),
+    "2026-09-17T23:59:59Z",
+  );
+  assert.equal(derived.value, "Settlement revisions are awaiting client approval.");
+  assert.notEqual(derived.value, "The matter is settled.");
+});
+
+test("current-status: invalid asOf is UNKNOWN", () => {
+  const matterId = "test-matter-status-invalid-asof";
+  const events = [
+    ...approvalAwaitingEvents(matterId),
+    recordedStatusEvent(matterId, "settled", "2026-09-20T09:00:00Z"),
+  ];
+  const matter = makeCurrentStatusMatter(matterId);
+  for (const asOf of ["", "   ", "not-a-date"]) {
+    const derived = deriveCurrentStatusSlot(events, matterId, matter, asOf);
+    assert.equal(derived.state, "UNKNOWN", `Invalid asOf ${JSON.stringify(asOf)} must be UNKNOWN`);
+    assert.equal(derived.value, "Unknown");
+    assert.notEqual(derived.value, "The matter is settled.");
+  }
+});
+
+test("current-status: equal timestamps tie-break by eventId", () => {
+  const matterId = "test-matter-status-tie";
+  const stamp = "2026-09-17T17:45:00Z";
+  const approval = approvalAwaitingEvents(matterId);
+  const settledWins = deriveCurrentStatusSlot(
+    [
+      ...approval,
+      recordedStatusEvent(matterId, "settled", stamp, `${matterId}-zzz-settled`),
+    ],
+    matterId,
+    makeCurrentStatusMatter(matterId),
+    CURRENT_STATUS_AS_OF,
+  );
+  assert.equal(settledWins.value, "The matter is settled.");
+
+  const approvalWins = deriveCurrentStatusSlot(
+    [
+      ...approval,
+      recordedStatusEvent(matterId, "settled", stamp, `${matterId}-aaa-settled`),
+    ],
+    matterId,
+    makeCurrentStatusMatter(matterId),
+    CURRENT_STATUS_AS_OF,
+  );
+  assert.equal(approvalWins.value, "Settlement revisions are awaiting client approval.");
+  assert.notEqual(approvalWins.value, "The matter is settled.");
 });
 
 // Tests for last-important-event slot derivation
@@ -885,7 +1225,7 @@ test("derived last-important-event slot matches ground-truth expectation", () =>
     (exp) => exp.slotId === "last-important-event",
   );
 
-  assert.ok(expectation, "Ground truth has last-important-event expectation");
+  assertDefined(expectation, "Ground truth has last-important-event expectation");
 
   assert.equal(
     derived.id,
@@ -981,8 +1321,8 @@ test("last-important-event: identifies most recent event by timestamp", () => {
   assert.equal(derived.state, "SUPPORTED");
   // Should use the later event (Sep 15)
   assert.equal(derived.evidenceIds[0], "test-artifact-2");
-  assert.ok(derived.value.includes("September 15, 2026"));
-  assert.ok(derived.value.includes("Attorney requested client approval"));
+  assert.equal(derived.value.includes("September 15, 2026"), true);
+  assert.equal(derived.value.includes("Attorney requested client approval"), true);
 });
 
 test("last-important-event: formats date and actor correctly", () => {
@@ -1025,8 +1365,8 @@ test("last-important-event: formats date and actor correctly", () => {
   assert.equal(derived.state, "SUPPORTED");
   // Should format as: "{Month} {Day}, {Year} — {Actor} {action}."
   // Actor should be preserved as-is when not matching responsible attorney
-  assert.ok(derived.value.includes("September 17, 2026"));
-  assert.ok(derived.value.includes("Alex Thompson"));
+  assert.equal(derived.value.includes("September 17, 2026"), true);
+  assert.equal(derived.value.includes("Alex Thompson"), true);
 });
 
 test("last-important-event: excludes record-keeping events (substantive event wins)", () => {
@@ -1086,8 +1426,8 @@ test("last-important-event: excludes record-keeping events (substantive event wi
   assert.equal(derived.state, "SUPPORTED");
   // MF2: Should select the substantive event (Sep 17) not the later record-keeping event (Sep 18)
   assert.equal(derived.evidenceIds[0], "test-artifact-substantive");
-  assert.ok(derived.value.includes("September 17, 2026"));
-  assert.ok(derived.value.includes("Attorney"));
+  assert.equal(derived.value.includes("September 17, 2026"), true);
+  assert.equal(derived.value.includes("Attorney"), true);
 });
 
 test("last-important-event: returns UNKNOWN when no events", () => {
@@ -1169,7 +1509,7 @@ test("last-important-event: uses eventId as tie-breaker for same timestamp", () 
   assert.equal(derived.state, "SUPPORTED");
   // With identical timestamps, should use the event with higher eventId (zzz > aaa)
   assert.equal(derived.evidenceIds[0], "test-artifact-b");
-  assert.ok(derived.value.includes("Attorney B requested approval B"));
+  assert.equal(derived.value.includes("Attorney B requested approval B"), true);
 });
 
 test("last-important-event: deterministic across multiple calls", () => {
@@ -1248,7 +1588,7 @@ test("last-important-event: uses only events from specified matter", () => {
   assert.equal(derived.state, "SUPPORTED");
   // Should only use matter-1 event, even though matter-2 event is later
   assert.equal(derived.evidenceIds[0], "artifact-1");
-  assert.ok(derived.value.includes("September 20, 2026"));
+  assert.equal(derived.value.includes("September 20, 2026"), true);
 });
 
 test("last-important-event: handles events out of chronological order in array", () => {
@@ -1309,8 +1649,8 @@ test("last-important-event: handles events out of chronological order in array",
   assert.equal(derived.state, "SUPPORTED");
   // Should use chronologically later event (Sep 20), not last in array
   assert.equal(derived.evidenceIds[0], "test-artifact-later");
-  assert.ok(derived.value.includes("September 20, 2026"));
-  assert.ok(derived.value.includes("Attorney requested decision"));
+  assert.equal(derived.value.includes("September 20, 2026"), true);
+  assert.equal(derived.value.includes("Attorney requested decision"), true);
 });
 
 test("last-important-event: handles regex special characters in client name", () => {
@@ -1352,8 +1692,8 @@ test("last-important-event: handles regex special characters in client name", ()
 
   assert.equal(derived.state, "SUPPORTED");
   // MF3: Should correctly handle parentheses without regex errors
-  assert.ok(derived.value.includes("September 17, 2026"));
-  assert.ok(!derived.value.includes("[REGEX ERROR]"));
+  assert.equal(derived.value.includes("September 17, 2026"), true);
+  assert.equal(!derived.value.includes("[REGEX ERROR]"), true);
 });
 
 // ===== Waiting-on slot tests =====
@@ -1369,7 +1709,7 @@ test("derived waiting-on slot matches ground-truth expectation", () => {
     (exp) => exp.slotId === "waiting-on",
   );
 
-  assert.ok(expectation, "Ground truth has waiting-on expectation");
+  assertDefined(expectation, "Ground truth has waiting-on expectation");
 
   assert.equal(
     derived.id,
@@ -1825,6 +2165,9 @@ test("waiting-on: matter isolation - only uses events from specified matter", ()
       actor: "Attorney B",
       action: "Requested attorney approval",
       object: "Brief B",
+      semantics: {
+        approvalKind: "attorney_approval",
+      },
       extractionMethod: "SYNTHETIC_GROUND_TRUTH",
       provenance: {
         sourceArtifactId: "test-artifact-wait-9",
@@ -1854,9 +2197,8 @@ test("waiting-on: matter isolation - only uses events from specified matter", ()
   assert.equal(derivedA.value, "Client approval");
   assert.deepEqual(derivedA.evidenceIds, ["test-artifact-wait-8"]);
 
-  // Matter B should only see its own approval
-  // Text fallback used since recipient is not the client
-  assert.equal(derivedB.state, "INFERRED");
+  // Matter B uses structured approvalKind because the recipient is not the client
+  assert.equal(derivedB.state, "SUPPORTED");
   assert.equal(derivedB.value, "Attorney approval");
   assert.deepEqual(derivedB.evidenceIds, ["test-artifact-wait-9"]);
 });
@@ -1927,10 +2269,10 @@ test("waiting-on MF2: short name substring does not match (Al vs Alan Smith)", (
     testEvidence,
   );
 
-  // "Al" should NOT match "Alan Smith" (whole-token matching)
-  // Should fall back to generic "Approval" and mark INFERRED
-  assert.equal(derived.state, "INFERRED");
-  assert.equal(derived.value, "Approval");
+  // Action text is not parsed. Without approvalKind or a client recipient,
+  // a short name in the action is UNKNOWN rather than INFERRED "Approval".
+  assert.equal(derived.state, "UNKNOWN");
+  assert.equal(derived.value, "Unknown");
 });
 
 test("waiting-on MF2: curly apostrophe in client name", () => {
@@ -1955,6 +2297,9 @@ test("waiting-on MF2: curly apostrophe in client name", () => {
       actor: "Attorney",
       action: "Requested Jordan Smith\u2019s approval",
       object: "Settlement",
+      semantics: {
+        approvalKind: "client_approval",
+      },
       extractionMethod: "SYNTHETIC_GROUND_TRUTH",
       provenance: {
         sourceArtifactId: "test-artifact-mf2-2",
@@ -1973,8 +2318,7 @@ test("waiting-on MF2: curly apostrophe in client name", () => {
     testEvidence,
   );
 
-  // Curly apostrophe should be normalized and match
-  assert.equal(derived.state, "INFERRED");
+  assert.equal(derived.state, "SUPPORTED");
   assert.equal(derived.value, "Client approval");
 });
 
@@ -2018,9 +2362,9 @@ test("waiting-on MF2: non-client approver (Ann vs Joanne Smith)", () => {
     testEvidence,
   );
 
-  // "Ann" should NOT match "Joanne Smith"
-  assert.equal(derived.state, "INFERRED");
-  assert.equal(derived.value, "Approval");
+  // Action text is not parsed. A non-client name in the action is UNKNOWN.
+  assert.equal(derived.state, "UNKNOWN");
+  assert.equal(derived.value, "Unknown");
 });
 
 test("waiting-on MF2: name with apostrophe (O'Brien)", () => {
@@ -2045,6 +2389,9 @@ test("waiting-on MF2: name with apostrophe (O'Brien)", () => {
       actor: "Attorney",
       action: "Requested O'Brien's approval",
       object: "Settlement",
+      semantics: {
+        approvalKind: "client_approval",
+      },
       extractionMethod: "SYNTHETIC_GROUND_TRUTH",
       provenance: {
         sourceArtifactId: "test-artifact-mf2-4",
@@ -2063,8 +2410,7 @@ test("waiting-on MF2: name with apostrophe (O'Brien)", () => {
     testEvidence,
   );
 
-  // Should match O'Brien (surname)
-  assert.equal(derived.state, "INFERRED");
+  assert.equal(derived.state, "SUPPORTED");
   assert.equal(derived.value, "Client approval");
 });
 
@@ -2090,6 +2436,9 @@ test("waiting-on MF2: name with hyphen (Mary-Kate)", () => {
       actor: "Attorney",
       action: "Requested Mary-Kate Olsen's approval",
       object: "Settlement",
+      semantics: {
+        approvalKind: "client_approval",
+      },
       extractionMethod: "SYNTHETIC_GROUND_TRUTH",
       provenance: {
         sourceArtifactId: "test-artifact-mf2-5",
@@ -2108,8 +2457,7 @@ test("waiting-on MF2: name with hyphen (Mary-Kate)", () => {
     testEvidence,
   );
 
-  // Should match full name with hyphen
-  assert.equal(derived.state, "INFERRED");
+  assert.equal(derived.state, "SUPPORTED");
   assert.equal(derived.value, "Client approval");
 });
 
@@ -2153,9 +2501,9 @@ test("waiting-on MF2: 'approve' phrasing without 'approval' keyword", () => {
     testEvidence,
   );
 
-  // Should still detect as approval
-  assert.equal(derived.state, "INFERRED");
-  assert.equal(derived.value, "Approval");
+  // "approve" in action text is not a structured fact.
+  assert.equal(derived.state, "UNKNOWN");
+  assert.equal(derived.value, "Unknown");
 });
 
 // MF3: Stale approval test
@@ -2181,6 +2529,9 @@ test("waiting-on MF3: approval with later substantive event is INFERRED", () => 
       actor: "Attorney",
       action: "Requested client approval",
       object: "Settlement",
+      semantics: {
+        approvalKind: "client_approval",
+      },
       extractionMethod: "SYNTHETIC_GROUND_TRUTH",
       provenance: {
         sourceArtifactId: "test-artifact-mf3-1",
@@ -2287,9 +2638,9 @@ test("waiting-on MF2: email substring false positive (jordan.smithson@ vs Jordan
     testEvidence,
   );
 
-  // jordan.smithson@ is NOT jordan.smith@, so should not match as Client approval
-  assert.equal(derived.state, "INFERRED");
-  assert.equal(derived.value, "Approval");
+  // jordan.smithson@ is NOT jordan.smith@, and there is no approvalKind.
+  assert.equal(derived.state, "UNKNOWN");
+  assert.equal(derived.value, "Unknown");
 });
 
 test("waiting-on MF2: email substring false positive (hal.smith@ vs Al Smith)", () => {
@@ -2357,12 +2708,12 @@ test("waiting-on MF2: email substring false positive (hal.smith@ vs Al Smith)", 
     testEvidence,
   );
 
-  // hal.smith@ is NOT al.smith@, so should not match as Client approval
-  assert.equal(derived.state, "INFERRED");
-  assert.equal(derived.value, "Approval");
+  // hal.smith@ is NOT al.smith@, and there is no approvalKind.
+  assert.equal(derived.state, "UNKNOWN");
+  assert.equal(derived.value, "Unknown");
 });
 
-// MF2 (3): Text fallback with artifact must be INFERRED
+// MF2 (3): Action-text fallback with a non-client artifact is UNKNOWN.
 test("waiting-on MF2: text fallback with artifact is INFERRED", () => {
   const testMatter = {
     id: "test-matter-mf2-fallback-001",
@@ -2428,9 +2779,9 @@ test("waiting-on MF2: text fallback with artifact is INFERRED", () => {
     testEvidence,
   );
 
-  // Sent to paralegal, not client - text fallback detects "Smith's" but must be INFERRED
-  assert.equal(derived.state, "INFERRED");
-  assert.equal(derived.value, "Client approval");
+  // Sent to paralegal, not client. Action text is not parsed, so UNKNOWN.
+  assert.equal(derived.state, "UNKNOWN");
+  assert.equal(derived.value, "Unknown");
 });
 
 // ============================================================================
@@ -2450,7 +2801,7 @@ test("derived next-action slot matches ground-truth expectation", () => {
     (exp) => exp.slotId === "next-action",
   );
 
-  assert.ok(expectation, "Ground truth has next-action expectation");
+  assertDefined(expectation, "Ground truth has next-action expectation");
 
   assert.equal(
     derived.id,
@@ -2526,6 +2877,9 @@ test("next-action: open approval request with document context returns INFERRED"
       actor: "Attorney",
       action: "Requested client approval before responding.",
       object: "Settlement language",
+      semantics: {
+        approvalKind: "client_approval",
+      },
       extractionMethod: "SYNTHETIC_GROUND_TRUTH",
       provenance: {
         sourceArtifactId: "test-artifact-approval",
@@ -2547,14 +2901,8 @@ test("next-action: open approval request with document context returns INFERRED"
   );
 
   assert.equal(derived.state, "INFERRED", "State should be INFERRED");
-  assert.ok(
-    derived.value.toLowerCase().includes("respond"),
-    "Value should mention responding",
-  );
-  assert.ok(
-    derived.value.includes("opposing counsel"),
-    "Value should identify opposing counsel as recipient (lowercased actor name)",
-  );
+  assert.equal(derived.value.toLowerCase().includes("respond"), true, "Value should mention responding");
+  assert.equal(derived.value.includes("opposing counsel"), true, "Value should identify opposing counsel as recipient (lowercased actor name)");
   assert.equal(
     derived.evidenceIds[0],
     "test-artifact-approval",
@@ -2603,10 +2951,7 @@ test("next-action: open waiting-state returns INFERRED", () => {
   );
 
   assert.equal(derived.state, "INFERRED", "State should be INFERRED");
-  assert.ok(
-    derived.value.toLowerCase().includes("court decision"),
-    "Value should mention what we're waiting for",
-  );
+  assert.equal(derived.value.toLowerCase().includes("court decision"), true, "Value should mention what we're waiting for");
   assert.equal(
     derived.evidenceIds[0],
     "test-artifact-waiting",
@@ -2673,10 +3018,7 @@ test("next-action: superseded waiting-state is ignored", () => {
 
   // The waiting state is superseded by document sent, so we infer from the document
   assert.equal(derived.state, "INFERRED", "State should be INFERRED");
-  assert.ok(
-    derived.value.toLowerCase().includes("review"),
-    "Value should mention reviewing",
-  );
+  assert.equal(derived.value.toLowerCase().includes("review"), true, "Value should mention reviewing");
   assert.equal(
     derived.evidenceIds[0],
     "test-artifact-doc",
@@ -2771,11 +3113,7 @@ test("next-action: matter isolation works correctly", () => {
     "test-artifact-matter-2",
     "Matter 2 should cite only its own artifact",
   );
-  assert.notEqual(
-    derivedMatter1.value,
-    derivedMatter2.value,
-    "Different matters should have different next actions",
-  );
+  assert.notEqual(derivedMatter1.value, derivedMatter2.value, "Different matters should have different next actions");
 });
 
 test("next-action: no events returns UNKNOWN", () => {
@@ -2863,14 +3201,8 @@ test("next-action: approval with court as sender", () => {
   );
 
   assert.equal(derived.state, "INFERRED", "State should be INFERRED");
-  assert.ok(
-    derived.value.includes("the court"),
-    "Value should map the Court clerk role to 'the court'",
-  );
-  assert.ok(
-    !derived.value.includes("court clerk"),
-    "Value should not echo the raw Court clerk label",
-  );
+  assert.equal(derived.value.includes("the court"), true, "Value should map the Court clerk role to 'the court'");
+  assert.equal(!derived.value.includes("court clerk"), true, "Value should not echo the raw Court clerk label");
 });
 
 test("next-action: only document-reviewed event (no approval)", () => {
@@ -2914,11 +3246,8 @@ test("next-action: only document-reviewed event (no approval)", () => {
   );
 
   assert.equal(derived.state, "INFERRED", "State should be INFERRED");
-  assert.ok(
-    derived.value.toLowerCase().includes("respond") ||
-      derived.value.toLowerCase().includes("decision"),
-    "Value should mention responding or decision",
-  );
+  assert.equal(derived.value.toLowerCase().includes("respond") ||
+      derived.value.toLowerCase().includes("decision"), true, "Value should mention responding or decision");
   assert.equal(
     derived.evidenceIds[0],
     "test-artifact-reviewed",
@@ -2963,6 +3292,9 @@ test("next-action: client name mentioned in approval action", () => {
       actor: "Attorney",
       action: "Requested Jordan Smith's approval before responding.",
       object: "Proposal",
+      semantics: {
+        approvalKind: "client_approval",
+      },
       extractionMethod: "SYNTHETIC_GROUND_TRUTH",
       provenance: {
         sourceArtifactId: "test-artifact-approval-na009",
@@ -2984,13 +3316,9 @@ test("next-action: client name mentioned in approval action", () => {
   );
 
   assert.equal(derived.state, "INFERRED", "State should be INFERRED");
-  assert.ok(
-    derived.value.toLowerCase().includes("client"),
-    "Value should mention client when client name is in action",
-  );
-  assert.ok(
-    derived.value.includes("opposing counsel"),
-    "Value should identify opposing counsel as recipient (lowercased actor name)",
+  assert.equal(
+    derived.value,
+    "Respond to opposing counsel after the client makes a decision.",
   );
 });
 
@@ -3052,18 +3380,9 @@ test("next-action: actor 'Courtney Smith' is not treated as court", () => {
   );
 
   assert.equal(derived.state, "INFERRED", "State should be INFERRED");
-  assert.ok(
-    derived.value.includes("Courtney Smith"),
-    "Value should keep the sender's proper-name casing",
-  );
-  assert.ok(
-    !derived.value.includes("courtney smith"),
-    "Value should not lowercase the sender's name",
-  );
-  assert.ok(
-    !derived.value.match(/\bthe court\b/i),
-    "Value should not mention 'the court'",
-  );
+  assert.equal(derived.value.includes("Courtney Smith"), true, "Value should keep the sender's proper-name casing");
+  assert.equal(!derived.value.includes("courtney smith"), true, "Value should not lowercase the sender's name");
+  assert.equal(!derived.value.match(/\bthe court\b/i), true, "Value should not mention 'the court'");
 });
 
 function makeNextActionMatter(
@@ -3143,14 +3462,8 @@ test("next-action: organization name keeps its original casing", () => {
   );
 
   assert.equal(derived.state, "INFERRED");
-  assert.ok(
-    derived.value.includes("Acme Corp LLP"),
-    "Value should keep the organization name casing",
-  );
-  assert.ok(
-    !derived.value.includes("acme corp llp"),
-    "Value should not lowercase the organization name",
-  );
+  assert.equal(derived.value.includes("Acme Corp LLP"), true, "Value should keep the organization name casing");
+  assert.equal(!derived.value.includes("acme corp llp"), true, "Value should not lowercase the organization name");
 });
 
 test("next-action: client-sent latest document does not say Respond to client", () => {
@@ -3199,14 +3512,8 @@ test("next-action: client-sent latest document does not say Respond to client", 
     NEXT_ACTION_AS_OF,
   );
 
-  assert.ok(
-    !/respond to jordan smith/i.test(derived.value),
-    "Must not produce Respond to <client>",
-  );
-  assert.ok(
-    !/respond to (the )?client/i.test(derived.value),
-    "Must not produce Respond to the client",
-  );
+  assert.equal(!/respond to jordan smith/i.test(derived.value), true, "Must not produce Respond to <client>");
+  assert.equal(!/respond to (the )?client/i.test(derived.value), true, "Must not produce Respond to the client");
 });
 
 test("next-action: own-attorney-sent latest document does not say Respond to our attorney", () => {
@@ -3255,14 +3562,8 @@ test("next-action: own-attorney-sent latest document does not say Respond to our
     NEXT_ACTION_AS_OF,
   );
 
-  assert.ok(
-    !/respond to alex thompson/i.test(derived.value),
-    "Must not produce Respond to <our attorney>",
-  );
-  assert.ok(
-    !/respond to (our )?(attorney|firm)/i.test(derived.value),
-    "Must not produce Respond to our attorney or firm",
-  );
+  assert.equal(!/respond to alex thompson/i.test(derived.value), true, "Must not produce Respond to <our attorney>");
+  assert.equal(!/respond to (our )?(attorney|firm)/i.test(derived.value), true, "Must not produce Respond to our attorney or firm");
 });
 
 function smithStyleApprovalEvents(matterId: string): OperationalEvent[] {
@@ -3291,6 +3592,9 @@ function smithStyleApprovalEvents(matterId: string): OperationalEvent[] {
       actor: "Attorney",
       action: "Requested client approval before responding.",
       object: "Settlement language",
+      semantics: {
+        approvalKind: "client_approval",
+      },
       provenance: {
         sourceArtifactId: `${matterId}-artifact-approval`,
         sourceSystem: "Outlook",
@@ -3315,6 +3619,9 @@ test("next-action: later Settled status does not drive the Smith-style sentence"
       actor: null,
       action: "Recorded the matter status as Settled.",
       object: "Matter status",
+      semantics: {
+        recordedStatus: "settled",
+      },
       provenance: {
         sourceArtifactId: `${matterId}-artifact-settled`,
         sourceSystem: "Clio",
@@ -3327,10 +3634,7 @@ test("next-action: later Settled status does not drive the Smith-style sentence"
 
   const derived = deriveNextActionSlot(syntheticEvents, matterId, testMatter, [], syntheticRequestingUser, NEXT_ACTION_AS_OF);
   assert.notEqual(derived.value, SMITH_STYLE_SENTENCE);
-  assert.ok(
-    !derived.value.includes("Respond to opposing counsel after the client makes a decision"),
-    "Settled matter must not keep the Smith-style next action",
-  );
+  assert.equal(!derived.value.includes("Respond to opposing counsel after the client makes a decision"), true, "Settled matter must not keep the Smith-style next action");
 });
 
 test("next-action: later Closed status does not drive the Smith-style sentence", () => {
@@ -3346,6 +3650,9 @@ test("next-action: later Closed status does not drive the Smith-style sentence",
       actor: null,
       action: "Recorded the matter status as Closed.",
       object: "Matter status",
+      semantics: {
+        recordedStatus: "closed",
+      },
       provenance: {
         sourceArtifactId: `${matterId}-artifact-closed`,
         sourceSystem: "Clio",
@@ -3358,10 +3665,7 @@ test("next-action: later Closed status does not drive the Smith-style sentence",
 
   const derived = deriveNextActionSlot(syntheticEvents, matterId, testMatter, [], syntheticRequestingUser, NEXT_ACTION_AS_OF);
   assert.notEqual(derived.value, SMITH_STYLE_SENTENCE);
-  assert.ok(
-    !derived.value.includes("Respond to opposing counsel after the client makes a decision"),
-    "Closed matter must not keep the Smith-style next action",
-  );
+  assert.equal(!derived.value.includes("Respond to opposing counsel after the client makes a decision"), true, "Closed matter must not keep the Smith-style next action");
 });
 
 test("next-action: later client document does not drive the Smith-style sentence", () => {
@@ -3389,10 +3693,7 @@ test("next-action: later client document does not drive the Smith-style sentence
 
   const derived = deriveNextActionSlot(syntheticEvents, matterId, testMatter, [], syntheticRequestingUser, NEXT_ACTION_AS_OF);
   assert.notEqual(derived.value, SMITH_STYLE_SENTENCE);
-  assert.ok(
-    !derived.value.includes("Respond to opposing counsel after the client makes a decision"),
-    "A later client document must stale the pending approval next action",
-  );
+  assert.equal(!derived.value.includes("Respond to opposing counsel after the client makes a decision"), true, "A later client document must stale the pending approval next action");
 });
 
 test("next-action: about 6 months of silence does not drive the Smith-style sentence", () => {
@@ -3422,10 +3723,7 @@ test("next-action: about 6 months of silence does not drive the Smith-style sent
   const staleAsOf = new Date(approvalTime + 180 * 24 * 60 * 60 * 1000).toISOString();
   const derived = deriveNextActionSlot(syntheticEvents, matterId, testMatter, [], syntheticRequestingUser, staleAsOf);
   assert.notEqual(derived.value, SMITH_STYLE_SENTENCE);
-  assert.ok(
-    !derived.value.includes("Respond to opposing counsel after the client makes a decision"),
-    "Six months of silence must stale the pending approval next action",
-  );
+  assert.equal(!derived.value.includes("Respond to opposing counsel after the client makes a decision"), true, "Six months of silence must stale the pending approval next action");
 });
 
 test("next-action and waiting-on agree on who is being waited on", () => {
@@ -3507,14 +3805,8 @@ test("next-action and waiting-on agree on who is being waited on", () => {
   );
 
   assert.equal(waiting.value, "Client approval");
-  assert.ok(
-    next.value.includes("the client makes a decision"),
-    "Next Action must wait on the same client as Waiting On",
-  );
-  assert.ok(
-    !next.value.includes("attorney approval"),
-    "Next Action must not disagree by waiting on attorney approval",
-  );
+  assert.equal(next.value.includes("the client makes a decision"), true, "Next Action must wait on the same client as Waiting On");
+  assert.equal(!next.value.includes("attorney approval"), true, "Next Action must not disagree by waiting on attorney approval");
 });
 
 function makeEmailEvidence(args: {
@@ -3596,10 +3888,7 @@ test("next-action: requesting-user sender is our side, not a respond-to target",
     NEXT_ACTION_AS_OF,
   );
 
-  assert.ok(
-    !/respond to rachel morgan/i.test(derived.value),
-    "Must not produce Respond to the requesting user",
-  );
+  assert.equal(!/respond to rachel morgan/i.test(derived.value), true, "Must not produce Respond to the requesting user");
 });
 
 test("next-action: Firm paralegal sender is our side, not a respond-to target", () => {
@@ -3649,10 +3938,7 @@ test("next-action: Firm paralegal sender is our side, not a respond-to target", 
     NEXT_ACTION_AS_OF,
   );
 
-  assert.ok(
-    !/respond to firm paralegal/i.test(derived.value),
-    "Must not produce Respond to a firm staff role",
-  );
+  assert.equal(!/respond to firm paralegal/i.test(derived.value), true, "Must not produce Respond to a firm staff role");
 });
 
 test("next-action: firm-domain sender is our side even when the actor name is unknown", () => {
@@ -3718,10 +4004,7 @@ test("next-action: firm-domain sender is our side even when the actor name is un
     NEXT_ACTION_AS_OF,
   );
 
-  assert.ok(
-    !/respond to jamie chen/i.test(derived.value),
-    "Firm-domain senders must be treated as our side; this assertion is load-bearing for isDocumentFromClientOrOwnSide",
-  );
+  assert.equal(!/respond to jamie chen/i.test(derived.value), true, "Firm-domain senders must be treated as our side; this assertion is load-bearing for isDocumentFromClientOrOwnSide");
 });
 
 test("next-action: object text keeps original proper-noun casing", () => {
@@ -3752,14 +4035,8 @@ test("next-action: object text keeps original proper-noun casing", () => {
     NEXT_ACTION_AS_OF,
   );
 
-  assert.ok(
-    waitingDerived.value.includes("Judge Lee's ruling"),
-    "Waiting-state object must keep proper-noun casing",
-  );
-  assert.ok(
-    !waitingDerived.value.includes("judge lee's ruling"),
-    "Waiting-state object must not be lowercased",
-  );
+  assert.equal(waitingDerived.value.includes("Judge Lee's ruling"), true, "Waiting-state object must keep proper-noun casing");
+  assert.equal(!waitingDerived.value.includes("judge lee's ruling"), true, "Waiting-state object must not be lowercased");
 
   const approvalMatter = makeNextActionMatter("test-matter-na-object-approval");
   const approvalDerived = deriveNextActionSlot(
@@ -3804,14 +4081,8 @@ test("next-action: object text keeps original proper-noun casing", () => {
     NEXT_ACTION_AS_OF,
   );
 
-  assert.ok(
-    approvalDerived.value.includes("Acme Corp"),
-    "Approval object must keep proper-noun casing",
-  );
-  assert.ok(
-    !approvalDerived.value.includes("acme corp"),
-    "Approval object must not be lowercased",
-  );
+  assert.equal(approvalDerived.value.includes("Acme Corp"), true, "Approval object must keep proper-noun casing");
+  assert.equal(!approvalDerived.value.includes("acme corp"), true, "Approval object must not be lowercased");
 });
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -3833,10 +4104,7 @@ test("next-action: approval is stale after 180 days with no later events", () =>
   );
 
   assert.notEqual(derived.value, SMITH_STYLE_SENTENCE);
-  assert.ok(
-    !derived.value.includes("Respond to opposing counsel after the client makes a decision"),
-    "Silence is measured against asOf, not a later inserted event",
-  );
+  assert.equal(!derived.value.includes("Respond to opposing counsel after the client makes a decision"), true, "Silence is measured against asOf, not a later inserted event");
 });
 
 test("next-action: silence boundary is 180 days inclusive", () => {
@@ -3869,11 +4137,7 @@ test("next-action: silence boundary is 180 days inclusive", () => {
     SMITH_STYLE_SENTENCE,
     "179 days of silence must not stale the approval (so >= vs > is load-bearing)",
   );
-  assert.notEqual(
-    at180.value,
-    SMITH_STYLE_SENTENCE,
-    "180 days of silence must stale the approval",
-  );
+  assert.notEqual(at180.value, SMITH_STYLE_SENTENCE, "180 days of silence must stale the approval");
 });
 
 test("next-action: later opposing-counsel document then Settled is UNKNOWN", () => {
@@ -3905,6 +4169,9 @@ test("next-action: later opposing-counsel document then Settled is UNKNOWN", () 
       actor: null,
       action: "Recorded the matter status as Settled.",
       object: "Matter status",
+      semantics: {
+        recordedStatus: "settled",
+      },
       provenance: {
         sourceArtifactId: `${matterId}-artifact-settled`,
         sourceSystem: "Clio",
@@ -3942,7 +4209,7 @@ test("next-action: ground truth is unchanged at its asOf", () => {
     (exp) => exp.slotId === "next-action",
   );
 
-  assert.ok(expectation);
+  assertDefined(expectation);
   assert.equal(derived.value, expectation.expectedValue);
   assert.equal(derived.state, expectation.expectedState);
 });
@@ -3966,11 +4233,7 @@ test("next-action: invalid or missing asOf is UNKNOWN, not never-stale", () => {
       "UNKNOWN",
       `Invalid asOf ${JSON.stringify(asOf)} must be explicit UNKNOWN`,
     );
-    assert.notEqual(
-      derived.value,
-      SMITH_STYLE_SENTENCE,
-      `Invalid asOf ${JSON.stringify(asOf)} must not silently mean never stale`,
-    );
+    assert.notEqual(derived.value, SMITH_STYLE_SENTENCE, `Invalid asOf ${JSON.stringify(asOf)} must not silently mean never stale`);
   }
 });
 
@@ -4037,14 +4300,8 @@ test("next-action: webmail domain must not make opposing counsel look like our s
     NEXT_ACTION_AS_OF,
   );
 
-  assert.ok(
-    derived.value.includes("opposing counsel"),
-    "gmail.com shared with our attorney must not reclassify opposing counsel as our side",
-  );
-  assert.ok(
-    !/proceed with/i.test(derived.value),
-    "Opposing counsel on gmail.com must remain a respond-to target",
-  );
+  assert.equal(derived.value.includes("opposing counsel"), true, "gmail.com shared with our attorney must not reclassify opposing counsel as our side");
+  assert.equal(!/proceed with/i.test(derived.value), true, "Opposing counsel on gmail.com must remain a respond-to target");
 });
 
 test("next-action: bare Paralegal role label is our side, not a respond-to target", () => {
@@ -4094,10 +4351,7 @@ test("next-action: bare Paralegal role label is our side, not a respond-to targe
     NEXT_ACTION_AS_OF,
   );
 
-  assert.ok(
-    !/respond to paralegal/i.test(derived.value),
-    "Must not produce Respond to Paralegal",
-  );
+  assert.equal(!/respond to paralegal/i.test(derived.value), true, "Must not produce Respond to Paralegal");
 });
 
 test("next-action: Active (not settled) does not match the settled/closed regex", () => {
@@ -4113,6 +4367,9 @@ test("next-action: Active (not settled) does not match the settled/closed regex"
       actor: null,
       action: "Recorded the matter status as Active (not settled).",
       object: "Matter status",
+      semantics: {
+        recordedStatus: "active",
+      },
       provenance: {
         sourceArtifactId: `${matterId}-artifact-active`,
         sourceSystem: "Clio",
@@ -4175,7 +4432,6 @@ test("derived owner slot matches ground-truth expectation", () => {
     extractedEvents,
     syntheticMatters[0].id,
     syntheticMatters[0],
-    evidenceProcessing.eligibleEvidence,
     syntheticRequestingUser,
     syntheticCurrentStateGroundTruth.asOf,
   );
@@ -4183,7 +4439,7 @@ test("derived owner slot matches ground-truth expectation", () => {
     (exp) => exp.slotId === "owner",
   );
 
-  assert.ok(expectation, "Ground truth has owner expectation");
+  assertDefined(expectation, "Ground truth has owner expectation");
   assert.equal(derived.id, "owner", "Derived slot has correct ID");
   assert.equal(
     derived.state,
@@ -4238,7 +4494,6 @@ test("owner: no responsibility events returns UNKNOWN", () => {
     ],
     matterId,
     makeOwnerMatter(matterId),
-    [],
     syntheticRequestingUser,
     OWNER_AS_OF,
   );
@@ -4260,6 +4515,9 @@ test("owner: structured actor name is SUPPORTED", () => {
         actor: "Alex Thompson",
         action: "Assigned coverage for the file.",
         object: null,
+        semantics: {
+          assignedPerson: "Alex Thompson",
+        },
         provenance: {
           sourceArtifactId: `${matterId}-artifact-resp`,
           sourceSystem: "Clio",
@@ -4271,7 +4529,6 @@ test("owner: structured actor name is SUPPORTED", () => {
     ],
     matterId,
     makeOwnerMatter(matterId),
-    [],
     syntheticRequestingUser,
     OWNER_AS_OF,
   );
@@ -4304,7 +4561,6 @@ test("owner: attorney role label without a named person is UNKNOWN", () => {
     ],
     matterId,
     makeOwnerMatter(matterId, { responsibleAttorney: "Priya Nair" }),
-    [],
     syntheticRequestingUser,
     OWNER_AS_OF,
   );
@@ -4313,8 +4569,42 @@ test("owner: attorney role label without a named person is UNKNOWN", () => {
   assert.equal(derived.value, "Unknown");
 });
 
-test("owner: text fallback matching a known identity is INFERRED", () => {
-  const matterId = "test-matter-owner-text";
+test("owner: assignedPerson matching a known identity is SUPPORTED", () => {
+  const matterId = "test-matter-owner-assigned";
+  const derived = deriveOwnerSlot(
+    [
+      makeOwnerEvent({
+        eventId: `${matterId}-resp`,
+        matterId,
+        eventType: "RESPONSIBILITY_RECORDED",
+        occurredAt: "2026-09-12T09:00:00Z",
+        actor: null,
+        action: "Noted that Priya Nair will handle follow-up on this file.",
+        object: null,
+        semantics: {
+          assignedPerson: "Priya Nair",
+        },
+        provenance: {
+          sourceArtifactId: `${matterId}-artifact-resp`,
+          sourceSystem: "Outlook",
+          sourceRecordedAt: "2026-09-12T09:00:00Z",
+          associationMethod: "EXPLICIT_MATTER_ID",
+          evidenceExcerpt: "will handle follow-up",
+        },
+      }),
+    ],
+    matterId,
+    makeOwnerMatter(matterId, { responsibleAttorney: "Priya Nair" }),
+    syntheticRequestingUser,
+    OWNER_AS_OF,
+  );
+
+  assert.equal(derived.state, "SUPPORTED");
+  assert.equal(derived.value, "Priya Nair");
+});
+
+test("owner: action text naming a known identity without assignedPerson is UNKNOWN", () => {
+  const matterId = "test-matter-owner-text-ignored";
   const derived = deriveOwnerSlot(
     [
       makeOwnerEvent({
@@ -4336,13 +4626,12 @@ test("owner: text fallback matching a known identity is INFERRED", () => {
     ],
     matterId,
     makeOwnerMatter(matterId, { responsibleAttorney: "Priya Nair" }),
-    [],
     syntheticRequestingUser,
     OWNER_AS_OF,
   );
 
-  assert.equal(derived.state, "INFERRED");
-  assert.equal(derived.value, "Priya Nair");
+  assert.equal(derived.state, "UNKNOWN");
+  assert.equal(derived.value, "Unknown");
 });
 
 test("owner: unknown name in text without structured identity is UNKNOWN", () => {
@@ -4368,7 +4657,6 @@ test("owner: unknown name in text without structured identity is UNKNOWN", () =>
     ],
     matterId,
     makeOwnerMatter(matterId, { responsibleAttorney: "Priya Nair" }),
-    [],
     syntheticRequestingUser,
     OWNER_AS_OF,
   );
@@ -4390,6 +4678,9 @@ test("owner: structured data wins over a different name in action text", () => {
         actor: "Priya Nair",
         action: "Noted that Rachel Morgan will help with coverage.",
         object: null,
+        semantics: {
+          assignedPerson: "Priya Nair",
+        },
         provenance: {
           sourceArtifactId: `${matterId}-artifact-resp`,
           sourceSystem: "Clio",
@@ -4401,7 +4692,6 @@ test("owner: structured data wins over a different name in action text", () => {
     ],
     matterId,
     makeOwnerMatter(matterId, { responsibleAttorney: "Priya Nair" }),
-    [],
     syntheticRequestingUser,
     OWNER_AS_OF,
   );
@@ -4422,6 +4712,9 @@ test("owner: later responsibility event supersedes an earlier one", () => {
         actor: "Alex Thompson",
         action: "Opened the file.",
         object: null,
+        semantics: {
+          assignedPerson: "Alex Thompson",
+        },
         provenance: {
           sourceArtifactId: `${matterId}-artifact-earlier`,
           sourceSystem: "Clio",
@@ -4438,6 +4731,9 @@ test("owner: later responsibility event supersedes an earlier one", () => {
         actor: "Priya Nair",
         action: "Took over coverage.",
         object: null,
+        semantics: {
+          assignedPerson: "Priya Nair",
+        },
         provenance: {
           sourceArtifactId: `${matterId}-artifact-later`,
           sourceSystem: "Clio",
@@ -4449,7 +4745,6 @@ test("owner: later responsibility event supersedes an earlier one", () => {
     ],
     matterId,
     makeOwnerMatter(matterId, { responsibleAttorney: "Priya Nair" }),
-    [],
     syntheticRequestingUser,
     OWNER_AS_OF,
   );
@@ -4471,6 +4766,9 @@ test("owner: events after asOf are ignored", () => {
         actor: "Rachel Morgan",
         action: "Opened the file.",
         object: null,
+        semantics: {
+          assignedPerson: "Rachel Morgan",
+        },
         provenance: {
           sourceArtifactId: `${matterId}-artifact-before`,
           sourceSystem: "Clio",
@@ -4487,6 +4785,9 @@ test("owner: events after asOf are ignored", () => {
         actor: "Priya Nair",
         action: "Took over coverage.",
         object: null,
+        semantics: {
+          assignedPerson: "Priya Nair",
+        },
         provenance: {
           sourceArtifactId: `${matterId}-artifact-after`,
           sourceSystem: "Clio",
@@ -4498,7 +4799,6 @@ test("owner: events after asOf are ignored", () => {
     ],
     matterId,
     makeOwnerMatter(matterId, { responsibleAttorney: "Priya Nair" }),
-    [],
     syntheticRequestingUser,
     "2026-09-17T23:59:59Z",
   );
@@ -4530,7 +4830,6 @@ test("owner: client actor is not treated as the matter owner", () => {
     ],
     matterId,
     makeOwnerMatter(matterId),
-    [],
     syntheticRequestingUser,
     OWNER_AS_OF,
   );
@@ -4563,7 +4862,6 @@ test("owner: matter isolation ignores another matter's assignment", () => {
     ],
     matterId,
     makeOwnerMatter(matterId),
-    [],
     syntheticRequestingUser,
     OWNER_AS_OF,
   );
@@ -4597,7 +4895,6 @@ test("owner: invalid asOf is UNKNOWN", () => {
     events,
     matterId,
     makeOwnerMatter(matterId),
-    [],
     syntheticRequestingUser,
     "not-a-date",
   );
@@ -4614,7 +4911,6 @@ test("owner: mutation removing responsibility events breaks the ground-truth mat
     withoutResponsibility,
     syntheticMatters[0].id,
     syntheticMatters[0],
-    evidenceProcessing.eligibleEvidence,
     syntheticRequestingUser,
     syntheticCurrentStateGroundTruth.asOf,
   );
@@ -4622,22 +4918,14 @@ test("owner: mutation removing responsibility events breaks the ground-truth mat
     (exp) => exp.slotId === "owner",
   );
 
-  assert.ok(expectation);
+  assertDefined(expectation);
   assert.notEqual(derived.value, expectation.expectedValue);
   assert.equal(derived.state, "UNKNOWN");
 });
 
-test("owner: email from a known own-side person is structured SUPPORTED", () => {
+test("owner: email from a known own-side person without assignedPerson is UNKNOWN", () => {
   const matterId = "test-matter-owner-email";
   const artifactId = `${matterId}-artifact-resp`;
-  const testEvidence: EligibleEvidenceItem[] = [
-    makeEmailEvidence({
-      id: artifactId,
-      from: "priya.nair@lawfirm.example",
-      to: ["jordan.smith@example.com"],
-      timestamp: "2026-09-12T09:00:00Z",
-    }),
-  ];
   const derived = deriveOwnerSlot(
     [
       makeOwnerEvent({
@@ -4659,13 +4947,112 @@ test("owner: email from a known own-side person is structured SUPPORTED", () => 
     ],
     matterId,
     makeOwnerMatter(matterId, { responsibleAttorney: "Priya Nair" }),
-    testEvidence,
     syntheticRequestingUser,
     OWNER_AS_OF,
   );
 
-  assert.equal(derived.state, "SUPPORTED");
-  assert.equal(derived.value, "Priya Nair");
+  assert.equal(derived.state, "UNKNOWN");
+  assert.equal(derived.value, "Unknown");
+  assert.notEqual(derived.value, "Priya Nair");
+});
+
+test("owner: omitted assignedPerson with actor Rachel transferring to Alex is UNKNOWN", () => {
+  const matterId = "test-matter-owner-omitted-rachel-transfer";
+  const derived = deriveOwnerSlot(
+    [
+      makeOwnerEvent({
+        eventId: `${matterId}-resp`,
+        matterId,
+        eventType: "RESPONSIBILITY_RECORDED",
+        occurredAt: "2026-09-12T09:00:00Z",
+        actor: "Rachel Morgan",
+        action: "Transferred to Alex Thompson",
+        object: null,
+        provenance: {
+          sourceArtifactId: `${matterId}-artifact-resp`,
+          sourceSystem: "Clio",
+          sourceRecordedAt: "2026-09-12T09:00:00Z",
+          associationMethod: "AUTHORITATIVE_SOURCE_RELATIONSHIP",
+          evidenceExcerpt: "transferred",
+        },
+      }),
+    ],
+    matterId,
+    makeOwnerMatter(matterId),
+    syntheticRequestingUser,
+    OWNER_AS_OF,
+  );
+
+  assert.equal(derived.state, "UNKNOWN");
+  assert.equal(derived.value, "Unknown");
+  assert.notEqual(derived.value, "Rachel Morgan");
+  assert.notEqual(derived.value, "Alex Thompson");
+});
+
+test("owner: omitted assignedPerson with actor Alex withdrawing is UNKNOWN", () => {
+  const matterId = "test-matter-owner-omitted-alex-withdrew";
+  const derived = deriveOwnerSlot(
+    [
+      makeOwnerEvent({
+        eventId: `${matterId}-resp`,
+        matterId,
+        eventType: "RESPONSIBILITY_RECORDED",
+        occurredAt: "2026-09-12T09:00:00Z",
+        actor: "Alex Thompson",
+        action: "Withdrew from the matter",
+        object: null,
+        provenance: {
+          sourceArtifactId: `${matterId}-artifact-resp`,
+          sourceSystem: "Clio",
+          sourceRecordedAt: "2026-09-12T09:00:00Z",
+          associationMethod: "AUTHORITATIVE_SOURCE_RELATIONSHIP",
+          evidenceExcerpt: "withdrew",
+        },
+      }),
+    ],
+    matterId,
+    makeOwnerMatter(matterId),
+    syntheticRequestingUser,
+    OWNER_AS_OF,
+  );
+
+  assert.equal(derived.state, "UNKNOWN");
+  assert.equal(derived.value, "Unknown");
+  assert.notEqual(derived.value, "Alex Thompson");
+});
+
+test("owner: omitted assignedPerson with email from Rachel saying Alex took over is UNKNOWN", () => {
+  const matterId = "test-matter-owner-omitted-rachel-email";
+  const artifactId = `${matterId}-artifact-resp`;
+  const derived = deriveOwnerSlot(
+    [
+      makeOwnerEvent({
+        eventId: `${matterId}-resp`,
+        matterId,
+        eventType: "RESPONSIBILITY_RECORDED",
+        occurredAt: "2026-09-12T09:00:00Z",
+        actor: null,
+        action: "Alex took over",
+        object: null,
+        provenance: {
+          sourceArtifactId: artifactId,
+          sourceSystem: "Outlook",
+          sourceRecordedAt: "2026-09-12T09:00:00Z",
+          associationMethod: "EXPLICIT_MATTER_ID",
+          evidenceExcerpt: "took over",
+        },
+      }),
+    ],
+    matterId,
+    makeOwnerMatter(matterId),
+    syntheticRequestingUser,
+    OWNER_AS_OF,
+  );
+
+  assert.equal(derived.state, "UNKNOWN");
+  assert.equal(derived.value, "Unknown");
+  assert.notEqual(derived.value, "Rachel Morgan");
+  assert.notEqual(derived.value, "Alex Thompson");
 });
 
 test("owner: role label does not stand in for a person named only in the event", () => {
@@ -4691,7 +5078,6 @@ test("owner: role label does not stand in for a person named only in the event",
     ],
     matterId,
     makeOwnerMatter(matterId, { responsibleAttorney: "Alex Thompson" }),
-    [],
     syntheticRequestingUser,
     OWNER_AS_OF,
   );
@@ -4720,7 +5106,7 @@ test("owner: unrecognized actor or object labels are UNKNOWN", () => {
   for (const label of labels) {
     for (const field of ["actor", "object"] as const) {
       const derived = deriveOwnerSlot(
-        [
+    [
           makeOwnerEvent({
             eventId: `${matterId}-${field}-${label}`,
             matterId,
@@ -4738,12 +5124,11 @@ test("owner: unrecognized actor or object labels are UNKNOWN", () => {
             },
           }),
         ],
-        matterId,
-        testMatter,
-        [],
-        syntheticRequestingUser,
-        OWNER_AS_OF,
-      );
+    matterId,
+    testMatter,
+    syntheticRequestingUser,
+    OWNER_AS_OF,
+  );
 
       assert.equal(
         derived.state,
@@ -4771,7 +5156,7 @@ test("owner: replacing/from/to text does not keep the outgoing owner", () => {
 
   for (const action of sentences) {
     const derived = deriveOwnerSlot(
-      [
+    [
         makeOwnerEvent({
           eventId: `${matterId}-${action.length}`,
           matterId,
@@ -4789,18 +5174,13 @@ test("owner: replacing/from/to text does not keep the outgoing owner", () => {
           },
         }),
       ],
-      matterId,
-      testMatter,
-      [],
-      syntheticRequestingUser,
-      OWNER_AS_OF,
-    );
+    matterId,
+    testMatter,
+    syntheticRequestingUser,
+    OWNER_AS_OF,
+  );
 
-    assert.notEqual(
-      derived.value,
-      "Alex Thompson",
-      `${JSON.stringify(action)} must not keep the outgoing owner`,
-    );
+    assert.notEqual(derived.value, "Alex Thompson", `${JSON.stringify(action)} must not keep the outgoing owner`);
     assert.equal(
       derived.state,
       "UNKNOWN",
@@ -4810,10 +5190,10 @@ test("owner: replacing/from/to text does not keep the outgoing owner", () => {
   }
 });
 
-function deriveOwnerFromAction(
+function deriveOwnerFromAssignment(
   matterId: string,
-  action: string,
-  object: string | null = null,
+  assignedPerson: string | null,
+  action = "Updated the assignment on the matter record.",
 ): ReturnType<typeof deriveOwnerSlot> {
   return deriveOwnerSlot(
     [
@@ -4824,7 +5204,10 @@ function deriveOwnerFromAction(
         occurredAt: "2026-09-12T09:00:00Z",
         actor: null,
         action,
-        object,
+        object: "Responsible attorney",
+        semantics: {
+          assignedPerson,
+        },
         provenance: {
           sourceArtifactId: `${matterId}-artifact-resp`,
           sourceSystem: "Clio",
@@ -4836,25 +5219,24 @@ function deriveOwnerFromAction(
     ],
     matterId,
     makeOwnerMatter(matterId),
-    [],
     syntheticRequestingUser,
     OWNER_AS_OF,
   );
 }
 
 test("owner: passive replaced-by yields the incoming owner", () => {
-  const knownIncoming = deriveOwnerFromAction(
+  const knownIncoming = deriveOwnerFromAssignment(
     "test-matter-owner-passive-known",
+    "Rachel Morgan",
     "Alex Thompson was replaced by Rachel Morgan.",
-    "Responsible attorney",
   );
   assert.equal(knownIncoming.value, "Rachel Morgan");
   assert.notEqual(knownIncoming.value, "Alex Thompson");
 
-  const unknownIncoming = deriveOwnerFromAction(
+  const unknownIncoming = deriveOwnerFromAssignment(
     "test-matter-owner-passive-unknown",
+    "Jamie Lee",
     "Alex Thompson was replaced by Jamie Lee.",
-    "Responsible attorney",
   );
   assert.equal(unknownIncoming.state, "UNKNOWN");
   assert.equal(unknownIncoming.value, "Unknown");
@@ -4862,10 +5244,10 @@ test("owner: passive replaced-by yields the incoming owner", () => {
 });
 
 test("owner: bare from with no incoming owner is UNKNOWN", () => {
-  const derived = deriveOwnerFromAction(
+  const derived = deriveOwnerFromAssignment(
     "test-matter-owner-bare-from",
+    null,
     "Reassigned from Alex Thompson.",
-    "Responsible attorney",
   );
   assert.equal(derived.state, "UNKNOWN");
   assert.equal(derived.value, "Unknown");
@@ -4873,10 +5255,10 @@ test("owner: bare from with no incoming owner is UNKNOWN", () => {
 });
 
 test("owner: removed with no incoming owner is UNKNOWN", () => {
-  const derived = deriveOwnerFromAction(
+  const derived = deriveOwnerFromAssignment(
     "test-matter-owner-removed",
+    null,
     "Removed Alex Thompson as responsible attorney.",
-    "Responsible attorney",
   );
   assert.equal(derived.state, "UNKNOWN");
   assert.equal(derived.value, "Unknown");
@@ -4884,10 +5266,10 @@ test("owner: removed with no incoming owner is UNKNOWN", () => {
 });
 
 test("owner: former with no incoming owner is UNKNOWN", () => {
-  const derived = deriveOwnerFromAction(
+  const derived = deriveOwnerFromAssignment(
     "test-matter-owner-former",
+    null,
     "Recorded Alex Thompson as the former responsible attorney.",
-    "Responsible attorney",
   );
   assert.equal(derived.state, "UNKNOWN");
   assert.equal(derived.value, "Unknown");
@@ -4895,17 +5277,13 @@ test("owner: former with no incoming owner is UNKNOWN", () => {
 });
 
 test("owner: first mentioned known name does not win a transfer", () => {
-  const derived = deriveOwnerFromAction(
+  const derived = deriveOwnerFromAssignment(
     "test-matter-owner-first-name-wins",
+    "Rachel Morgan",
     "Transferred from Alex Thompson to Rachel Morgan.",
-    "Responsible attorney",
   );
   assert.equal(derived.value, "Rachel Morgan");
-  assert.notEqual(
-    derived.value,
-    "Alex Thompson",
-    "Outgoing name appears first; returning it means first-mentioned wins",
-  );
+  assert.notEqual(derived.value, "Alex Thompson", "Outgoing name appears first; returning it means first-mentioned wins");
 });
 
 test("owner: departure wording without a positive assignment is UNKNOWN", () => {
@@ -4920,10 +5298,10 @@ test("owner: departure wording without a positive assignment is UNKNOWN", () => 
   ];
 
   for (const action of phrasings) {
-    const derived = deriveOwnerFromAction(
+    const derived = deriveOwnerFromAssignment(
       `test-matter-owner-departure-${action.length}`,
+      null,
       action,
-      "Responsible attorney",
     );
     assert.equal(
       derived.state,
@@ -4936,10 +5314,10 @@ test("owner: departure wording without a positive assignment is UNKNOWN", () => 
 });
 
 test("owner: lone name with no assignment verb is UNKNOWN", () => {
-  const derived = deriveOwnerFromAction(
+  const derived = deriveOwnerFromAssignment(
     "test-matter-owner-lone-name",
+    null,
     "Discussed the file with Alex Thompson.",
-    "Responsible attorney",
   );
   assert.equal(derived.state, "UNKNOWN");
   assert.equal(derived.value, "Unknown");
@@ -4947,10 +5325,10 @@ test("owner: lone name with no assignment verb is UNKNOWN", () => {
 });
 
 test("owner: originally assigned name is not the current owner", () => {
-  const derived = deriveOwnerFromAction(
+  const derived = deriveOwnerFromAssignment(
     "test-matter-owner-originally-assigned",
+    null,
     "Originally assigned to Alex Thompson.",
-    "Responsible attorney",
   );
   assert.equal(derived.state, "UNKNOWN");
   assert.equal(derived.value, "Unknown");
@@ -4958,10 +5336,10 @@ test("owner: originally assigned name is not the current owner", () => {
 });
 
 test("owner: previously assigned then unassigned is UNKNOWN", () => {
-  const derived = deriveOwnerFromAction(
+  const derived = deriveOwnerFromAssignment(
     "test-matter-owner-previously-unassigned",
+    null,
     "Previously assigned to Alex Thompson; now unassigned.",
-    "Responsible attorney",
   );
   assert.equal(derived.state, "UNKNOWN");
   assert.equal(derived.value, "Unknown");
@@ -4969,10 +5347,10 @@ test("owner: previously assigned then unassigned is UNKNOWN", () => {
 });
 
 test("owner: took over then withdrew is UNKNOWN", () => {
-  const derived = deriveOwnerFromAction(
+  const derived = deriveOwnerFromAssignment(
     "test-matter-owner-took-over-withdrew",
+    null,
     "Alex Thompson took over, then withdrew.",
-    "Responsible attorney",
   );
   assert.equal(derived.state, "UNKNOWN");
   assert.equal(derived.value, "Unknown");
@@ -4980,10 +5358,10 @@ test("owner: took over then withdrew is UNKNOWN", () => {
 });
 
 test("owner: reversed assignment still yields a named incoming owner", () => {
-  const derived = deriveOwnerFromAction(
+  const derived = deriveOwnerFromAssignment(
     "test-matter-owner-reversed-incoming",
+    "Rachel Morgan",
     "Originally assigned to Alex Thompson; now assigned to Rachel Morgan.",
-    "Responsible attorney",
   );
   assert.equal(derived.value, "Rachel Morgan");
   assert.notEqual(derived.value, "Alex Thompson");
@@ -4991,10 +5369,10 @@ test("owner: reversed assignment still yields a named incoming owner", () => {
 });
 
 test("owner: exactly one assigned name is required", () => {
-  const derived = deriveOwnerFromAction(
+  const derived = deriveOwnerFromAssignment(
     "test-matter-owner-two-assigned-names",
+    null,
     "Assigned to Alex Thompson and Rachel Morgan will handle the file.",
-    "Responsible attorney",
   );
   assert.equal(derived.state, "UNKNOWN");
   assert.equal(derived.value, "Unknown");
@@ -5023,6 +5401,7 @@ function scheduleStatusEvent(args: {
   action: string;
   object: string | null;
   artifactId?: string;
+  scheduledDate?: string | null;
 }): OperationalEvent {
   return makeImportantDateEvent({
     eventId: args.eventId,
@@ -5032,6 +5411,10 @@ function scheduleStatusEvent(args: {
     actor: "Rachel Morgan",
     action: args.action,
     object: args.object,
+    semantics:
+      args.scheduledDate !== undefined
+        ? { scheduledDate: args.scheduledDate }
+        : {},
     provenance: {
       sourceArtifactId: args.artifactId ?? `${args.matterId}-artifact-schedule`,
       sourceSystem: "Outlook",
@@ -5054,7 +5437,7 @@ test("derived important-date slot matches ground-truth expectation", () => {
     (exp) => exp.slotId === "important-date",
   );
 
-  assert.ok(expectation, "Ground truth has important-date expectation");
+  assertDefined(expectation, "Ground truth has important-date expectation");
   assert.equal(derived.id, "important-date", "Derived slot has correct ID");
   assert.equal(
     derived.state,
@@ -5084,7 +5467,7 @@ test("important-date: fixture UNKNOWN is from missing calendar date, not event t
   const schedule = extractedEvents.find(
     (event) => event.eventType === "SCHEDULE_STATUS_REPORTED",
   );
-  assert.ok(schedule, "Smith fixture includes a schedule event");
+  assertDefined(schedule, "Smith fixture includes a schedule event");
 
   const derived = deriveImportantDateSlot(
     extractedEvents,
@@ -5094,16 +5477,8 @@ test("important-date: fixture UNKNOWN is from missing calendar date, not event t
 
   assert.equal(derived.state, "UNKNOWN");
   assert.equal(derived.value, "Unknown");
-  assert.notEqual(
-    derived.value,
-    "September 10, 2026",
-    "sourceRecordedAt is not the important date",
-  );
-  assert.notEqual(
-    derived.state,
-    "SUPPORTED",
-    "Relative phrasing must not become a SUPPORTED date",
-  );
+  assert.notEqual(derived.value, "September 10, 2026", "sourceRecordedAt is not the important date");
+  assert.notEqual(derived.state, "SUPPORTED", "Relative phrasing must not become a SUPPORTED date");
 });
 
 test("important-date: adding an explicit structured date changes the fixture result", () => {
@@ -5117,6 +5492,7 @@ test("important-date: adding an explicit structured date changes the fixture res
         sourceRecordedAt: "2026-09-17T12:00:00Z",
         action: "Recorded the hearing date on the matter calendar.",
         object: "2026-10-15",
+        scheduledDate: "2026-10-15",
         artifactId: "email-0142-explicit-date",
       }),
     ],
@@ -5159,7 +5535,7 @@ test("important-date: no schedule events returns UNKNOWN", () => {
   assert.equal(derived.evidenceIds.length, 0);
 });
 
-test("important-date: structured object date is SUPPORTED", () => {
+test("important-date: omitted scheduledDate does not treat object as a date", () => {
   const matterId = "test-matter-date-structured";
   const derived = deriveImportantDateSlot(
     [
@@ -5176,13 +5552,57 @@ test("important-date: structured object date is SUPPORTED", () => {
     IMPORTANT_DATE_AS_OF,
   );
 
-  assert.equal(derived.state, "SUPPORTED");
-  assert.equal(derived.value, "October 15, 2026");
-  assert.deepEqual(derived.evidenceIds, [`${matterId}-artifact-schedule`]);
+  assert.equal(derived.state, "UNKNOWN");
+  assert.equal(derived.value, "Unknown");
+  assert.notEqual(derived.value, "October 15, 2026");
 });
 
-test("important-date: text calendar date is INFERRED", () => {
+test("important-date: object date with cancelled action and no scheduledDate is UNKNOWN", () => {
+  const matterId = "test-matter-date-object-cancelled";
+  const derived = deriveImportantDateSlot(
+    [
+      scheduleStatusEvent({
+        matterId,
+        eventId: `${matterId}-schedule`,
+        occurredAt: "2026-09-12T09:00:00Z",
+        sourceRecordedAt: "2026-09-12T09:00:00Z",
+        action: "Hearing 2026-10-15 cancelled.",
+        object: "2026-10-15",
+      }),
+    ],
+    matterId,
+    IMPORTANT_DATE_AS_OF,
+  );
+
+  assert.equal(derived.state, "UNKNOWN");
+  assert.equal(derived.value, "Unknown");
+  assert.notEqual(derived.value, "October 15, 2026");
+});
+
+test("important-date: scheduledDate on a narrative schedule report is SUPPORTED", () => {
   const matterId = "test-matter-date-text";
+  const derived = deriveImportantDateSlot(
+    [
+      scheduleStatusEvent({
+        matterId,
+        eventId: `${matterId}-schedule`,
+        occurredAt: "2026-09-12T09:00:00Z",
+        sourceRecordedAt: "2026-09-12T09:00:00Z",
+        action: "Conference scheduled for October 15, 2026.",
+        object: "Settlement conference",
+        scheduledDate: "2026-10-15",
+      }),
+    ],
+    matterId,
+    IMPORTANT_DATE_AS_OF,
+  );
+
+  assert.equal(derived.state, "SUPPORTED");
+  assert.equal(derived.value, "October 15, 2026");
+});
+
+test("important-date: action text with a calendar date is ignored without scheduledDate", () => {
+  const matterId = "test-matter-date-text-ignored";
   const derived = deriveImportantDateSlot(
     [
       scheduleStatusEvent({
@@ -5198,8 +5618,8 @@ test("important-date: text calendar date is INFERRED", () => {
     IMPORTANT_DATE_AS_OF,
   );
 
-  assert.equal(derived.state, "INFERRED");
-  assert.equal(derived.value, "October 15, 2026");
+  assert.equal(derived.state, "UNKNOWN");
+  assert.equal(derived.value, "Unknown");
 });
 
 test("important-date: relative phrasing without a calendar date is UNKNOWN", () => {
@@ -5248,6 +5668,7 @@ test("important-date: date before asOf is no longer current", () => {
         sourceRecordedAt: "2026-08-01T09:00:00Z",
         action: "Recorded the response date.",
         object: "2026-09-10",
+        scheduledDate: "2026-09-10",
       }),
     ],
     matterId,
@@ -5270,6 +5691,7 @@ test("important-date: date on asOf day remains current", () => {
         sourceRecordedAt: "2026-09-10T09:00:00Z",
         action: "Recorded the filing date.",
         object: "2026-09-17",
+        scheduledDate: "2026-09-17",
       }),
     ],
     matterId,
@@ -5291,6 +5713,7 @@ test("important-date: later schedule event supersedes an earlier date", () => {
         sourceRecordedAt: "2026-08-01T09:00:00Z",
         action: "Recorded the original hearing date.",
         object: "2026-10-01",
+        scheduledDate: "2026-10-01",
         artifactId: `${matterId}-artifact-earlier`,
       }),
       scheduleStatusEvent({
@@ -5300,6 +5723,7 @@ test("important-date: later schedule event supersedes an earlier date", () => {
         sourceRecordedAt: "2026-09-10T09:00:00Z",
         action: "Recorded the continued hearing date.",
         object: "2026-10-15",
+        scheduledDate: "2026-10-15",
         artifactId: `${matterId}-artifact-later`,
       }),
     ],
@@ -5323,13 +5747,14 @@ test("important-date: continuance in one event keeps the destination date", () =
         sourceRecordedAt: "2026-09-12T09:00:00Z",
         action: "Hearing continued from October 1, 2026 to October 15, 2026.",
         object: "Hearing",
+        scheduledDate: "2026-10-15",
       }),
     ],
     matterId,
     IMPORTANT_DATE_AS_OF,
   );
 
-  assert.equal(derived.state, "INFERRED");
+  assert.equal(derived.state, "SUPPORTED");
   assert.equal(derived.value, "October 15, 2026");
   assert.notEqual(derived.value, "October 1, 2026");
 });
@@ -5367,6 +5792,7 @@ test("important-date: later relative phrasing supersedes an earlier explicit dat
         sourceRecordedAt: "2026-08-01T09:00:00Z",
         action: "Recorded the hearing date.",
         object: "2026-10-01",
+        scheduledDate: "2026-10-01",
         artifactId: `${matterId}-artifact-earlier`,
       }),
       scheduleStatusEvent({
@@ -5376,6 +5802,7 @@ test("important-date: later relative phrasing supersedes an earlier explicit dat
         sourceRecordedAt: "2026-09-10T09:00:00Z",
         action: "Reported that the hearing was moved to next month.",
         object: "Hearing",
+        scheduledDate: null,
         artifactId: `${matterId}-artifact-later`,
       }),
     ],
@@ -5399,6 +5826,7 @@ test("important-date: events after asOf are ignored", () => {
         sourceRecordedAt: "2026-09-10T09:00:00Z",
         action: "Recorded the hearing date.",
         object: "2026-10-01",
+        scheduledDate: "2026-10-01",
         artifactId: `${matterId}-artifact-before`,
       }),
       scheduleStatusEvent({
@@ -5408,6 +5836,7 @@ test("important-date: events after asOf are ignored", () => {
         sourceRecordedAt: "2026-09-20T09:00:00Z",
         action: "Recorded the continued hearing date.",
         object: "2026-11-01",
+        scheduledDate: "2026-11-01",
         artifactId: `${matterId}-artifact-after`,
       }),
     ],
@@ -5439,11 +5868,7 @@ test("important-date: invalid asOf is UNKNOWN", () => {
       "UNKNOWN",
       `Invalid asOf ${JSON.stringify(asOf)} must be explicit UNKNOWN`,
     );
-    assert.notEqual(
-      derived.value,
-      "October 15, 2026",
-      `Invalid asOf ${JSON.stringify(asOf)} must not keep a date`,
-    );
+    assert.notEqual(derived.value, "October 15, 2026", `Invalid asOf ${JSON.stringify(asOf)} must not keep a date`);
   }
 });
 
@@ -5481,6 +5906,7 @@ test("important-date: structured date wins over a different date in action text"
         sourceRecordedAt: "2026-09-12T09:00:00Z",
         action: "Noted an old target of October 1, 2026.",
         object: "2026-10-15",
+        scheduledDate: "2026-10-15",
       }),
     ],
     matterId,
@@ -5492,46 +5918,58 @@ test("important-date: structured date wins over a different date in action text"
 });
 
 test("owner: extra clauses do not keep a reversed assignment", () => {
-  const cases: Array<{ action: string; expected: string }> = [
+  const cases: Array<{
+    action: string;
+    assignedPerson: string | null;
+    expected: string;
+  }> = [
     {
       action: "Assigned to Alex Thompson in 2024, but he has since withdrawn.",
+      assignedPerson: null,
       expected: "Unknown",
     },
     {
       action: "Alex Thompson took over; he withdrew last week.",
+      assignedPerson: null,
       expected: "Unknown",
     },
     {
       action: "Assigned to Alex Thompson at intake; currently unassigned.",
+      assignedPerson: null,
       expected: "Unknown",
     },
     {
       action: "At first assigned to Alex Thompson.",
+      assignedPerson: null,
       expected: "Unknown",
     },
     {
       action: "Assigned to Alex Thompson.",
+      assignedPerson: "Alex Thompson",
       expected: "Alex Thompson",
     },
     {
       action: "Alex Thompson took over.",
+      assignedPerson: "Alex Thompson",
       expected: "Alex Thompson",
     },
     {
       action: "Named Rachel Morgan as counsel of record.",
+      assignedPerson: "Rachel Morgan",
       expected: "Rachel Morgan",
     },
     {
       action: "Assigned to Alex Thompson pending coverage.",
+      assignedPerson: null,
       expected: "Unknown",
     },
   ];
 
-  for (const { action, expected } of cases) {
-    const derived = deriveOwnerFromAction(
+  for (const { action, assignedPerson, expected } of cases) {
+    const derived = deriveOwnerFromAssignment(
       `test-matter-owner-clause-${action.length}`,
+      assignedPerson,
       action,
-      "Responsible attorney",
     );
     assert.equal(
       derived.value,
@@ -5539,41 +5977,44 @@ test("owner: extra clauses do not keep a reversed assignment", () => {
       `${JSON.stringify(action)} must yield ${expected}, got ${derived.value}`,
     );
     if (expected === "Unknown") {
-      assert.notEqual(
-        derived.value,
-        "Alex Thompson",
-        `${JSON.stringify(action)} must not keep the reversed owner`,
-      );
+      assert.notEqual(derived.value, "Alex Thompson", `${JSON.stringify(action)} must not keep the reversed owner`);
       assert.equal(derived.state, "UNKNOWN");
     }
   }
 });
 
-test("important-date: text dates require a positive scheduling form", () => {
-  const cases: Array<{ action: string; expected: string }> = [
-    { action: "continued from 2026-10-15", expected: "Unknown" },
+test("important-date: cancelled or undirected reports are UNKNOWN; a current date is SUPPORTED", () => {
+  const cases: Array<{
+    action: string;
+    scheduledDate?: string | null;
+    expected: string;
+  }> = [
+    { action: "continued from 2026-10-15", scheduledDate: null, expected: "Unknown" },
     {
       action: "on 2026-10-15 continued; new date TBD",
+      scheduledDate: null,
       expected: "Unknown",
     },
-    { action: "vacated (was 2026-10-15)", expected: "Unknown" },
-    { action: "2026-10-15 cancelled", expected: "Unknown" },
-    { action: "previously 2026-10-15", expected: "Unknown" },
+    { action: "vacated (was 2026-10-15)", scheduledDate: null, expected: "Unknown" },
+    { action: "2026-10-15 cancelled", scheduledDate: null, expected: "Unknown" },
+    { action: "previously 2026-10-15", scheduledDate: null, expected: "Unknown" },
     {
       action: "Respond to 2026-10-01 order by 2026-10-20",
       expected: "Unknown",
     },
     {
       action: "Hearing set for 2026-10-15",
+      scheduledDate: "2026-10-15",
       expected: "October 15, 2026",
     },
     {
       action: "Hearing scheduled for 2026-10-15 cancelled",
+      scheduledDate: null,
       expected: "Unknown",
     },
   ];
 
-  for (const { action, expected } of cases) {
+  for (const { action, scheduledDate, expected } of cases) {
     const matterId = `test-matter-date-form-${action.length}`;
     const derived = deriveImportantDateSlot(
       [
@@ -5584,6 +6025,7 @@ test("important-date: text dates require a positive scheduling form", () => {
           sourceRecordedAt: "2026-09-12T09:00:00Z",
           action,
           object: "Hearing",
+          scheduledDate,
         }),
       ],
       matterId,
@@ -5594,11 +6036,7 @@ test("important-date: text dates require a positive scheduling form", () => {
       expected,
       `${JSON.stringify(action)} must yield ${expected}, got ${derived.value}`,
     );
-    assert.notEqual(
-      derived.value,
-      "October 1, 2026",
-      `${JSON.stringify(action)} must not treat a bare to/from date as current`,
-    );
+    assert.notEqual(derived.value, "October 1, 2026", `${JSON.stringify(action)} must not treat a bare to/from date as current`);
     if (expected === "Unknown") {
       assert.equal(derived.state, "UNKNOWN");
       assert.notEqual(derived.value, "October 15, 2026");
@@ -5617,6 +6055,7 @@ test("important-date: invalid calendar date 2027-02-30 is UNKNOWN", () => {
         sourceRecordedAt: "2026-09-12T09:00:00Z",
         action: "Recorded the hearing date.",
         object: "2027-02-30",
+        scheduledDate: "2027-02-30",
         artifactId: `${matterId}-artifact-structured`,
       }),
     ],
@@ -5625,11 +6064,7 @@ test("important-date: invalid calendar date 2027-02-30 is UNKNOWN", () => {
   );
   assert.equal(structured.state, "UNKNOWN");
   assert.equal(structured.value, "Unknown");
-  assert.notEqual(
-    structured.value,
-    "March 2, 2027",
-    "2027-02-30 must not roll over through Date.UTC",
-  );
+  assert.notEqual(structured.value, "March 2, 2027", "2027-02-30 must not roll over through Date.UTC");
 
   const fromText = deriveImportantDateSlot(
     [
@@ -5671,10 +6106,10 @@ test("owner: final-clause handoff to a known identity is current", () => {
   ];
 
   for (const { action, expected } of cases) {
-    const derived = deriveOwnerFromAction(
+    const derived = deriveOwnerFromAssignment(
       `test-matter-owner-handoff-${action.length}`,
+      expected,
       action,
-      "Responsible attorney",
     );
     assert.equal(
       derived.value,
@@ -5687,10 +6122,10 @@ test("owner: final-clause handoff to a known identity is current", () => {
 });
 
 test("owner: two assigned names in the final clause stay UNKNOWN", () => {
-  const derived = deriveOwnerFromAction(
+  const derived = deriveOwnerFromAssignment(
     "test-matter-owner-two-in-final-clause",
+    null,
     "Assigned to Alex Thompson and assigned to Rachel Morgan.",
-    "Responsible attorney",
   );
   assert.equal(derived.state, "UNKNOWN");
   assert.equal(derived.value, "Unknown");
@@ -5753,11 +6188,7 @@ test("important-date: TBD in a later clause disqualifies an earlier set-for date
   );
   assert.equal(derived.state, "UNKNOWN");
   assert.equal(derived.value, "Unknown");
-  assert.notEqual(
-    derived.value,
-    "October 15, 2026",
-    "TBD in a later clause must not leave the set-for date current",
-  );
+  assert.notEqual(derived.value, "October 15, 2026", "TBD in a later clause must not leave the set-for date current");
 });
 
 test("important-date: from immediately before a set-for date is UNKNOWN", () => {
@@ -5799,11 +6230,7 @@ test("important-date: vacated shortly before a later set-for date is UNKNOWN", (
   );
   assert.equal(derived.state, "UNKNOWN");
   assert.equal(derived.value, "Unknown");
-  assert.notEqual(
-    derived.value,
-    "October 15, 2026",
-    "vacated within 40 characters before the date must disqualify it",
-  );
+  assert.notEqual(derived.value, "October 15, 2026", "vacated within 40 characters before the date must disqualify it");
 });
 
 test("owner: transfer plus leftover and in the same clause is UNKNOWN", () => {
@@ -5816,10 +6243,10 @@ test("owner: transfer plus leftover and in the same clause is UNKNOWN", () => {
   ];
 
   for (const action of cases) {
-    const derived = deriveOwnerFromAction(
+    const derived = deriveOwnerFromAssignment(
       `test-matter-owner-and-clause-${action.length}`,
+      null,
       action,
-      "Responsible attorney",
     );
     assert.equal(
       derived.state,
@@ -5918,7 +6345,7 @@ test("important-date: extra clause text around set-for/continuance is UNKNOWN", 
   }
 });
 
-test("important-date: clean set-for with time and place is INFERRED", () => {
+test("important-date: clean set-for with time and place is SUPPORTED", () => {
   const matterId = "test-matter-date-time-place";
   const derived = deriveImportantDateSlot(
     [
@@ -5929,12 +6356,13 @@ test("important-date: clean set-for with time and place is INFERRED", () => {
         sourceRecordedAt: "2026-09-12T09:00:00Z",
         action: "Hearing set for Oct 15, 2026 at 9:00 AM in Courtroom 3.",
         object: "Hearing",
+        scheduledDate: "2026-10-15",
       }),
     ],
     matterId,
     IMPORTANT_DATE_AS_OF,
   );
-  assert.equal(derived.state, "INFERRED");
+  assert.equal(derived.state, "SUPPORTED");
   assert.equal(derived.value, "October 15, 2026");
 });
 
@@ -5949,12 +6377,13 @@ test("important-date: continued from/to keeps the destination date", () => {
         sourceRecordedAt: "2026-09-12T09:00:00Z",
         action: "continued from 2026-10-15 to 2026-11-20",
         object: "Hearing",
+        scheduledDate: "2026-11-20",
       }),
     ],
     matterId,
     IMPORTANT_DATE_AS_OF,
   );
-  assert.equal(derived.state, "INFERRED");
+  assert.equal(derived.state, "SUPPORTED");
   assert.equal(derived.value, "November 20, 2026");
   assert.notEqual(derived.value, "October 15, 2026");
 });
@@ -6128,6 +6557,7 @@ test("important-date: courtroom id with a digit or a single city still resolves"
           sourceRecordedAt: "2026-09-12T09:00:00Z",
           action,
           object: "Hearing",
+          scheduledDate: "2026-10-15",
         }),
       ],
       matterId,
@@ -6138,7 +6568,7 @@ test("important-date: courtroom id with a digit or a single city still resolves"
       expected,
       `${JSON.stringify(action)} must yield ${expected}, got ${derived.value}`,
     );
-    assert.equal(derived.state, "INFERRED");
+    assert.equal(derived.state, "SUPPORTED");
   }
 });
 
@@ -6176,7 +6606,7 @@ test("derived significant-information slot matches ground-truth expectation", ()
     (exp) => exp.slotId === "significant-information",
   );
 
-  assert.ok(expectation, "Ground truth has significant-information expectation");
+  assertDefined(expectation, "Ground truth has significant-information expectation");
   assert.equal(derived.id, "significant-information");
   assert.equal(derived.state, expectation.expectedState);
   assert.equal(derived.value, expectation.expectedValue);

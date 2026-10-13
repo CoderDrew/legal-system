@@ -210,6 +210,10 @@ export const syntheticOperationalEventGroundTruth: OperationalEventGroundTruth =
       action:
         "Reported that the settlement conference remained scheduled for next month.",
       object: "Settlement conference",
+      semantics: {
+        // Relative phrasing is not a calendar date.
+        scheduledDate: null,
+      },
       evidenceExcerpt:
         "The settlement conference remains scheduled for next month.",
     },
@@ -236,6 +240,10 @@ export const syntheticOperationalEventGroundTruth: OperationalEventGroundTruth =
       actor: "Opposing counsel",
       action: "Sent revised settlement language to the matter team.",
       object: "Revised settlement language",
+      semantics: {
+        documentForm: "revised",
+        documentSubject: "settlement",
+      },
       evidenceExcerpt:
         "Attached is the revised settlement language incorporating the changes discussed yesterday.",
     },
@@ -250,6 +258,9 @@ export const syntheticOperationalEventGroundTruth: OperationalEventGroundTruth =
       actor: null,
       action: "Recorded the matter status as Active.",
       object: "Matter status",
+      semantics: {
+        recordedStatus: "active",
+      },
       evidenceExcerpt: "Matter status: Active",
     },
     {
@@ -260,6 +271,9 @@ export const syntheticOperationalEventGroundTruth: OperationalEventGroundTruth =
       actor: null,
       action: "Recorded Alex Thompson as the responsible attorney.",
       object: "Responsible attorney",
+      semantics: {
+        assignedPerson: "Alex Thompson",
+      },
       evidenceExcerpt: "Responsible attorney: Alex Thompson",
     },
   ],
@@ -282,6 +296,9 @@ export const syntheticOperationalEventGroundTruth: OperationalEventGroundTruth =
       actor: "Alex Thompson",
       action: "Requested Jordan Smith's approval before responding.",
       object: "Revised settlement language",
+      semantics: {
+        approvalKind: "client_approval",
+      },
       evidenceExcerpt: "would like your approval before I respond",
     },
   ],

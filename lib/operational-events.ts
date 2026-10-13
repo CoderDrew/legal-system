@@ -32,6 +32,7 @@ export function extractOperationalEvents({
 
         return {
           ...eventWithoutExcerpt,
+          semantics: event.semantics ?? {},
           extractionMethod: "SYNTHETIC_GROUND_TRUTH" as const,
           provenance: {
             sourceArtifactId: evidence.provenance.originalArtifactId,

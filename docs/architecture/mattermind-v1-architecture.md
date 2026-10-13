@@ -236,7 +236,7 @@ One Evidence Item may produce multiple events, and multiple Evidence Items may s
 
 An Operational Event represents what eligible evidence establishes happened or was recorded. It does **not** represent MatterMind's conclusion about what is currently true. Historical events remain valid even when later events eventually supersede their operational significance. Supersession and current-state determination operate on events in a later reasoning stage; they are not part of event extraction.
 
-The synthetic vertical slice implements a deliberately small event contract containing a deterministic identity, matter identity, event type, nullable occurrence time and actor, action, optional object, extraction method, and source provenance. Unknown occurrence times and actors remain null rather than being inferred.
+The synthetic vertical slice implements a deliberately small event contract containing a deterministic identity, matter identity, event type, nullable occurrence time and actor, display action and object, typed `semantics` for current-state facts, extraction method, and source provenance. Unknown occurrence times and actors remain null rather than being inferred. Reasoners read `semantics`; they do not parse `action` or `object` for meaning. Omitted `assignedPerson` or `scheduledDate` is UNKNOWN; `object` is not parsed as a date and actor/object/email are not used as the assignee.
 
 The event contract deliberately separates two timestamps:
 
@@ -285,7 +285,7 @@ The structured user-facing result contains:
 
 The deadline field may report dates that appear in evidence. MatterMind V1 does not determine authoritative legal deadlines.
 
-In the current Synthetic Vertical Slice, the visible Matter Status Brief is predefined synthetic output. It is not assembled from the extracted Operational Event history. The full event-to-claim provenance chain remains an architectural target for later increments, not a claim about current behavior.
+In the current Synthetic Vertical Slice, the visible Matter Status Brief is assembled from the extracted Operational Event history. All 7 slots are derived by deterministic current-state and supersession reasoning over typed event semantics. Human-readable `action` and `object` remain display fields; reasoners do not parse them for meaning. The claim-to-event-to-eligible-evidence provenance chain is implemented for every slot.
 
 ## Provenance flow
 
@@ -304,7 +304,9 @@ A user should ultimately be able to inspect the source evidence supporting a mat
 The currently implemented portion is:
 
 ```text
-Operational Event
+Matter Status Brief
+→ State Claim
+→ Operational Event
 → Eligible Evidence Item
 → Original synthetic Clio or Outlook artifact
 ```
@@ -356,7 +358,7 @@ The exact model calls and orchestration mechanism remain undecided.
 
 ### Synthetic vertical-slice implementation checkpoint
 
-The implemented deterministic path now stops at operational-event extraction:
+The implemented deterministic path now runs through current-state reasoning:
 
 ```text
 Synthetic Artifacts
@@ -364,9 +366,11 @@ Synthetic Artifacts
 → Matter Association
 → Eligibility
 → Operational Event Extraction
+→ Current-State and Supersession Reasoning
+→ All 7 Grounded Brief Slots
 ```
 
-Only eligible evidence enters extraction. The current synthetic extractor uses explicit ground-truth fixtures, supports zero, one, or multiple events per artifact, preserves association and source provenance, and orders output deterministically by the source record timestamp and event identity. It performs no event deduplication, historical-state supersession, or current-state determination.
+Only eligible evidence enters extraction. The current synthetic extractor uses explicit ground-truth fixtures, supports zero, one, or multiple events per artifact, preserves association and source provenance, and orders output deterministically by the source record timestamp and event identity. It performs no event deduplication. Historical events remain immutable; supersession changes operational significance without removing history.
 
 The current ground-truth case contains six eligible artifacts and seven extracted events:
 
@@ -376,24 +380,11 @@ The current ground-truth case contains six eligible artifacts and seven extracte
 - The client-approval email produces two events.
 - Unknown event times and actors remain null.
 
-The extracted events remain immutable historical records. A later reasoning stage may determine that a newer event changes the operational significance of an older one, but that does not make the older event false or remove it from history.
-
-The next unimplemented boundary is:
-
-```text
-Operational Events
-→ Current-State and Supersession Reasoning
-```
-
-Before implementing that boundary, the next increment should define explicit event-history-to-current-state ground truth for superseded, unresolved, conflicting, and unknown scenarios. This checkpoint does not select an algorithm or schema for that work.
-
-**Current checkpoint:** Current-state ground truth is defined for Smith v. Acme (matter-2026-0142). The fixture specifies expected current-state conclusions for each brief slot, including superseded, unresolved (SUPPORTED and INFERRED), and unknown evidence states. The waiting-on-opposing-counsel event is superseded by the opposing-counsel document-sent event. Reasoning to produce those conclusions from events is not implemented.
+**Current checkpoint:** All 7 Matter Status Brief slots (current-status, last-important-event, waiting-on, next-action, owner, important-date, and significant-information) are derived from structured operational events. Reasoners read typed event semantics rather than parsing human-readable action or object text. `object` is not parsed as a date; omitted `assignedPerson` or `scheduledDate` is UNKNOWN. Current-state ground truth for Smith v. Acme (matter-2026-0142) still matches exactly, including the superseded waiting-on-opposing-counsel event. SUPPORTED claims require a structured fact; invalid `asOf` is UNKNOWN; a missing fact is conservative UNKNOWN.
 
 ### Capabilities not implemented in the current vertical slice
 
 - AI or model integration.
-- Current-state reasoning or Status Brief generation from events.
-- Supersession reasoning.
 - Event reconciliation or deduplication.
 - Real Clio integration.
 - Real Microsoft 365 integration.
@@ -482,4 +473,4 @@ This does not mean the architecture is final. The project has enough architectur
 
 The synthetic vertical slice is in progress against synthetic data. It tests the architecture's boundaries and core product outcome without requiring live source-system integrations.
 
-The current implementation reaches deterministic operational-event extraction. Current-state and supersession reasoning remain future work.
+The current implementation reaches deterministic operational-event extraction and current-state reasoning. All 7 brief slots are derived from structured events. Real Clio and Microsoft 365 integrations remain future work.
