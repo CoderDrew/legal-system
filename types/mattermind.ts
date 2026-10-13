@@ -96,6 +96,83 @@ export type OperationalEventType =
   | "DOCUMENT_REVIEWED"
   | "APPROVAL_REQUESTED";
 
+/**
+ * Who an APPROVAL_REQUESTED event is waiting on, and whether the request
+ * is an approval, review, or decision. Used by current-status, waiting-on,
+ * next-action, and last-important-event.
+ */
+export type ApprovalKind =
+  | "client_approval"
+  | "attorney_approval"
+  | "client_review"
+  | "attorney_review"
+  | "review"
+  | "decision"
+  | "approval";
+
+/**
+ * DOCUMENT_SENT form used to compose current-status sentences.
+ * "revised" → "Settlement revisions are awaiting …"
+ * "draft" → "Draft contract is awaiting …"
+ * "proposed" → "Proposed agreement is awaiting …"
+ * "plain" → "{object} awaiting …" with the object casing preserved.
+ */
+export type DocumentForm = "revised" | "draft" | "proposed" | "plain";
+
+/**
+ * MATTER_STATUS_RECORDED operational status. "Active (not settled)" is
+ * "active"; reasoners must not treat negation as settled or closed.
+ */
+export type RecordedMatterStatus = "active" | "settled" | "closed";
+
+/**
+ * Typed facts consumed by current-state reasoners.
+ *
+ * Human-readable `action` and `object` are display fields and must not be
+ * parsed for meaning. A missing fact yields UNKNOWN (or the slot's
+ * structured fallback), never a text-inference path.
+ *
+ * Each field is used only by the event types named in its comment.
+ */
+export type OperationalEventSemantics = {
+  /**
+   * APPROVAL_REQUESTED: who must act and in what mode.
+   */
+  approvalKind?: ApprovalKind;
+  /**
+   * APPROVAL_REQUESTED: named non-role approver (for example "Judge Lee")
+   * when approvalKind is "approval" and the approver is not a client or
+   * attorney role. Current-status emits "{namedApprover}'s approval".
+   */
+  namedApprover?: string;
+  /**
+   * DOCUMENT_SENT: form used to compose current-status sentences.
+   */
+  documentForm?: DocumentForm;
+  /**
+   * DOCUMENT_SENT: subject noun such as "settlement" or "contract".
+   */
+  documentSubject?: string;
+  /**
+   * MATTER_STATUS_RECORDED: recorded operational status.
+   */
+  recordedStatus?: RecordedMatterStatus;
+  /**
+   * RESPONSIBILITY_RECORDED: current assignee when the event records one.
+   * Explicit null means no current assignee (departure, unassigned,
+   * reversal). Omitted means fall back to actor / object / source-email
+   * identity matching.
+   */
+  assignedPerson?: string | null;
+  /**
+   * SCHEDULE_STATUS_REPORTED: current calendar date as YYYY-MM-DD.
+   * Explicit null means the report has no current date (cancelled, TBD,
+   * relative phrasing). Omitted means use `object` when `object` itself
+   * is a complete calendar date.
+   */
+  scheduledDate?: string | null;
+};
+
 export type OperationalEventDraft = {
   eventId: string;
   matterId: string;
@@ -104,6 +181,11 @@ export type OperationalEventDraft = {
   actor: string | null;
   action: string;
   object: string | null;
+  /**
+   * Typed facts for current-state reasoners. Optional in extraction
+   * drafts; missing semantics are treated as `{}`.
+   */
+  semantics?: OperationalEventSemantics;
 };
 
 export type OperationalEventGroundTruthEntry = OperationalEventDraft & {

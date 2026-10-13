@@ -1,6 +1,8 @@
 import type {
+  ApprovalKind,
   EligibleEvidenceItem,
   OperationalEvent,
+  OperationalEventSemantics,
   StatusClaim,
   SyntheticMatter,
   SyntheticUser,
@@ -19,7 +21,7 @@ function getEventTimestamp(event: OperationalEvent): number {
 /**
  * Helper: Compare two events by timestamp with tie-breaking rules.
  * Returns the later event, or current if equal by timestamp with eventId tie-break.
- * 
+ *
  * Tie-break rules:
  * 1. Later timestamp wins
  * 2. On timestamp tie, prefer event with explicit occurredAt over null
@@ -416,13 +418,82 @@ function parseAsOfTime(asOf: string): number | null {
   return Number.isFinite(time) ? time : null;
 }
 
+function eventSemantics(event: OperationalEvent): OperationalEventSemantics {
+  return event.semantics ?? {};
+}
+
+function isClientApprovalKind(kind: ApprovalKind | undefined): boolean {
+  return kind === "client_approval" || kind === "client_review";
+}
+
+function approvalTargetPhrase(semantics: OperationalEventSemantics): string {
+  switch (semantics.approvalKind) {
+    case "client_approval":
+      return "client approval";
+    case "attorney_approval":
+      return "attorney approval";
+    case "client_review":
+      return "client review";
+    case "attorney_review":
+      return "attorney review";
+    case "review":
+      return "review";
+    case "decision":
+      return "decision";
+    case "approval":
+      return semantics.namedApprover
+        ? `${semantics.namedApprover}'s approval`
+        : "approval";
+    default:
+      return "approval";
+  }
+}
+
+function waitingOnValueFromApprovalKind(kind: ApprovalKind): string {
+  switch (kind) {
+    case "client_approval":
+      return "Client approval";
+    case "attorney_approval":
+      return "Attorney approval";
+    case "client_review":
+    case "attorney_review":
+    case "review":
+      return "Review";
+    case "decision":
+      return "Decision";
+    case "approval":
+      return "Approval";
+  }
+}
+
+function currentStatusFromDocument(
+  documentEvent: OperationalEvent,
+  approvalEvent: OperationalEvent
+): string {
+  const documentSemantics = eventSemantics(documentEvent);
+  const approvalTarget = approvalTargetPhrase(eventSemantics(approvalEvent));
+  const rawObject = documentEvent.object || approvalEvent.object || "document";
+  const subject = documentSemantics.documentSubject || "document";
+  const capitalizedSubject = subject.charAt(0).toUpperCase() + subject.slice(1);
+
+  switch (documentSemantics.documentForm) {
+    case "revised":
+      return `${capitalizedSubject} revisions are awaiting ${approvalTarget}.`;
+    case "draft":
+      return `Draft ${subject} is awaiting ${approvalTarget}.`;
+    case "proposed":
+      return `Proposed ${subject} is awaiting ${approvalTarget}.`;
+    default:
+      return `${rawObject} awaiting ${approvalTarget}.`;
+  }
+}
+
 function isClosedOrSettledStatusEvent(event: OperationalEvent): boolean {
   if (event.eventType !== "MATTER_STATUS_RECORDED") {
     return false;
   }
-  const text = `${event.action} ${event.object ?? ""}`.toLowerCase();
-  const withoutNegation = text.replace(/\bnot\s+(settled|closed)\b/g, "");
-  return /\bsettled\b/.test(withoutNegation) || /\bclosed\b/.test(withoutNegation);
+  const status = eventSemantics(event).recordedStatus;
+  return status === "settled" || status === "closed";
 }
 
 /**
@@ -463,7 +534,8 @@ function isApprovalStaleForNextAction(
 
 /**
  * Who the pending approval is waiting on, shared with waiting-on.
- * Structured recipient first; PR #7 text fallback only when needed.
+ * Structured recipient first, then typed approvalKind. Action text is
+ * never parsed.
  */
 function resolveApprovalDecisionPhrase(
   waitingEvent: OperationalEvent,
@@ -477,50 +549,82 @@ function resolveApprovalDecisionPhrase(
     return "the client makes a decision";
   }
 
-  const approvalType = deriveApprovalTypeFromText(
-    waitingEvent.action,
-    matter.client
-  );
-  if (approvalType === "Client approval") {
-    return "the client makes a decision";
+  switch (eventSemantics(waitingEvent).approvalKind) {
+    case "client_approval":
+    case "client_review":
+      return "the client makes a decision";
+    case "attorney_approval":
+      return "attorney approval";
+    case "attorney_review":
+    case "review":
+      return "review";
+    case "decision":
+      return "a decision";
+    default:
+      return "approval";
   }
-  if (approvalType === "Attorney approval") {
-    return "attorney approval";
+}
+
+function formatLastImportantEventDescription(
+  event: OperationalEvent,
+  matter: SyntheticMatter
+): string {
+  let actorDisplay: string;
+  if (event.actor) {
+    actorDisplay =
+      event.actor === matter.responsibleAttorney ? "Attorney" : event.actor;
+  } else {
+    actorDisplay = "";
   }
-  if (approvalType === "Review") {
-    return "review";
+
+  const semantics = eventSemantics(event);
+  const object = event.object;
+
+  if (
+    event.eventType === "APPROVAL_REQUESTED" &&
+    isClientApprovalKind(semantics.approvalKind) &&
+    object
+  ) {
+    const actor = actorDisplay || event.actor || "Someone";
+    return `${actor} requested client approval of the ${object.toLowerCase()}.`;
   }
-  if (approvalType === "Decision") {
-    return "a decision";
+
+  const actionText = event.action;
+  let description: string;
+  if (actorDisplay) {
+    const actionLowercased =
+      actionText.charAt(0).toLowerCase() + actionText.slice(1);
+    description = `${actorDisplay} ${actionLowercased}`;
+  } else {
+    description = actionText;
   }
-  return "approval";
+
+  if (!description.endsWith(".")) {
+    description = `${description}.`;
+  }
+  return description;
 }
 
 /**
  * Derives the last-important-event slot from operational events.
  *
- * This is a historical-event slot: it identifies the most recent
- * substantive operational event and formats it with date and description.
+ * Historical-event slot: the most recent substantive operational event,
+ * formatted with date and description. Record-keeping events
+ * (MATTER_STATUS_RECORDED, RESPONSIBILITY_RECORDED) are excluded.
  *
- * Selection rule: The most recent event by timestamp (with eventId as tie-breaker).
- * Record-keeping events (MATTER_STATUS_RECORDED, RESPONSIBILITY_RECORDED) are excluded.
- *
- * Format: "{Month} {Day}, {Year} — {Actor role} {normalized action}."
- * Actor normalization: Use "Attorney" if actor matches matter's responsible attorney.
- * Action normalization: Template-based for APPROVAL_REQUESTED, raw text for others.
- *
- * Deterministic: Uses event timestamps, actor, action, and matter context fields.
- * No AI, models, or fixture-specific strings.
+ * APPROVAL_REQUESTED uses a client-approval template only when
+ * semantics.approvalKind is a client kind and object is present.
+ * Other events use actor plus the display `action` field; `action` is
+ * not parsed for meaning.
  */
 export function deriveLastImportantEventSlot(
   events: OperationalEvent[],
   matterId: string,
   matter: SyntheticMatter,
 ): StatusClaim {
-  // Exclude record-keeping event types
-  const matterEvents = events.filter((e) => 
-    e.matterId === matterId && 
-    e.eventType !== "MATTER_STATUS_RECORDED" && 
+  const matterEvents = events.filter((e) =>
+    e.matterId === matterId &&
+    e.eventType !== "MATTER_STATUS_RECORDED" &&
     e.eventType !== "RESPONSIBILITY_RECORDED"
   );
 
@@ -534,29 +638,9 @@ export function deriveLastImportantEventSlot(
     };
   }
 
-  // Get the latest event by timestamp
-  // Use occurredAt when available (more semantically accurate), else sourceRecordedAt
-  const latestEvent = matterEvents.reduce((latest, current) => {
-    const latestTime = new Date(
-      latest.occurredAt ?? latest.provenance.sourceRecordedAt
-    ).getTime();
-    const currentTime = new Date(
-      current.occurredAt ?? current.provenance.sourceRecordedAt
-    ).getTime();
-    
-    if (currentTime > latestTime) return current;
-    if (currentTime < latestTime) return latest;
-    
-    // Timestamps are equal - prefer events with explicit occurredAt (actual events over mentions)
-    if (current.occurredAt !== null && latest.occurredAt === null) return current;
-    if (current.occurredAt === null && latest.occurredAt !== null) return latest;
-    
-    // Both null or both non-null: tie-break with eventId
-    return current.eventId > latest.eventId ? current : latest;
-  });
-
-  // Format the date portion (use occurredAt when available, else sourceRecordedAt)
-  const eventTimestamp = latestEvent.occurredAt ?? latestEvent.provenance.sourceRecordedAt;
+  const latestEvent = getLatestEvent(matterEvents);
+  const eventTimestamp =
+    latestEvent.occurredAt ?? latestEvent.provenance.sourceRecordedAt;
   const eventDate = new Date(eventTimestamp);
   const formattedDate = eventDate.toLocaleDateString("en-US", {
     month: "long",
@@ -565,64 +649,10 @@ export function deriveLastImportantEventSlot(
     timeZone: "UTC",
   });
 
-  // Normalize actor: use role if actor matches matter's responsible attorney
-  let actorDisplay: string;
-  if (latestEvent.actor) {
-    actorDisplay = latestEvent.actor === matter.responsibleAttorney 
-      ? "Attorney" 
-      : latestEvent.actor;
-  } else {
-    actorDisplay = "";
-  }
-
-  // Template-based description for structured event types
-  let description: string;
-  
-  if (latestEvent.eventType === "APPROVAL_REQUESTED") {
-    // Template: "{actor role} requested {approver role} approval of the {object}"
-    // Only use template when client name is found and object is meaningful
-    const actor = actorDisplay || latestEvent.actor || "Someone";
-    const object = latestEvent.object;
-    
-    // Determine if client name appears in action using safe includes check
-    const clientName = matter.client.toLowerCase();
-    const actionLower = latestEvent.action.toLowerCase();
-    
-    if (actionLower.includes(clientName) && object) {
-      // Use template: replace client name with "client" and use object field
-      description = `${actor} requested client approval of the ${object.toLowerCase()}.`;
-    } else {
-      // Fall back to raw action with actor prepended
-      const actionText = latestEvent.action.charAt(0).toLowerCase() + latestEvent.action.slice(1);
-      description = `${actor} ${actionText}`;
-      if (!description.endsWith(".")) {
-        description = `${description}.`;
-      }
-    }
-  } else {
-    // Fallback: use raw action text for other event types
-    const actionText = latestEvent.action;
-    
-    if (actorDisplay) {
-      // Lowercase first letter of action for continuity with actor name
-      const actionLowercased = actionText.charAt(0).toLowerCase() + actionText.slice(1);
-      description = `${actorDisplay} ${actionLowercased}`;
-    } else {
-      description = actionText;
-    }
-    
-    // Ensure description ends with a period
-    if (!description.endsWith(".")) {
-      description = `${description}.`;
-    }
-  }
-
-  const eventValue = `${formattedDate} — ${description}`;
-
   return {
     id: "last-important-event",
     label: "Last Important Event",
-    value: eventValue,
+    value: `${formattedDate} — ${formatLastImportantEventDescription(latestEvent, matter)}`,
     state: "SUPPORTED",
     evidenceIds: [latestEvent.provenance.sourceArtifactId],
   };
@@ -631,22 +661,13 @@ export function deriveLastImportantEventSlot(
 /**
  * Derives the waiting-on slot from operational events.
  *
- * This is a supersession-type slot: waiting states (APPROVAL_REQUESTED,
- * WAITING_STATE_REPORTED) remain open until resolved or superseded by a later event.
+ * Supersession-type slot: waiting states remain open until resolved or
+ * superseded. APPROVAL_REQUESTED uses structured email recipient matching
+ * first, then semantics.approvalKind. Missing both is UNKNOWN; action
+ * text is never parsed.
  *
- * Resolution rules:
- * - APPROVAL_REQUESTED is resolved by a later event indicating the approval was received
- *   (not yet implemented - approvals stay open in V1)
- * - WAITING_STATE_REPORTED is superseded by events that fulfill the wait
- *   (DOCUMENT_SENT, APPROVAL_REQUESTED, etc.)
- *
- * Evidence states:
- * - SUPPORTED: An open waiting state is directly evidenced, with no later substantive events
- * - INFERRED: Waiting state derived via reasoning (stale approval or text fallback)
- * - UNKNOWN: No open wait or evidence is insufficient
- *
- * Deterministic: Uses event timestamps, eventType, and structured recipient/participant
- * matching. Text fallback (marked INFERRED) only when structured data is absent.
+ * A later substantive event after an open approval downgrades SUPPORTED
+ * to INFERRED (staleness), which is reasoning rather than text inference.
  */
 export function deriveWaitingOnSlot(
   events: OperationalEvent[],
@@ -678,46 +699,46 @@ export function deriveWaitingOnSlot(
     };
   }
 
-  // Get the most recent open waiting event
   const latestWaiting = getLatestEvent(openWaitingEvents);
 
-  // MF3: Check if there's a strictly later substantive event (makes it INFERRED, not SUPPORTED)
   let derivedState: "SUPPORTED" | "INFERRED" = "SUPPORTED";
-  
-  if (latestWaiting.eventType === "APPROVAL_REQUESTED") {
-    if (hasLaterSubstantiveEvent(latestWaiting, matterEvents)) {
-      derivedState = "INFERRED";
-    }
+  if (
+    latestWaiting.eventType === "APPROVAL_REQUESTED" &&
+    hasLaterSubstantiveEvent(latestWaiting, matterEvents)
+  ) {
+    derivedState = "INFERRED";
   }
 
-  // MF2: Derive the waiting-on value from structured data, not action text parsing
-  let waitingOnValue: string;
+  let waitingOnValue: string | null = null;
 
   if (latestWaiting.eventType === "APPROVAL_REQUESTED") {
-    // Try to resolve from structured data: email recipient to client participant
     const sourceArtifact = eligibleEvidence.find(
       (e) => e.id === latestWaiting.provenance.sourceArtifactId
     );
-
     const clientRecipient = sourceArtifact
       ? isClientRecipient(sourceArtifact, matter)
       : false;
 
     if (clientRecipient) {
       waitingOnValue = "Client approval";
-    } else if (sourceArtifact) {
-      // Structured data available but couldn't resolve to client - try text fallback
-      waitingOnValue = deriveApprovalTypeFromText(latestWaiting.action, matter.client);
-      // Text fallback used, not from structured data, so always mark as INFERRED
-      derivedState = "INFERRED";
     } else {
-      // No structured data - text fallback
-      waitingOnValue = deriveApprovalTypeFromText(latestWaiting.action, matter.client);
-      derivedState = "INFERRED";
+      const approvalKind = eventSemantics(latestWaiting).approvalKind;
+      if (approvalKind) {
+        waitingOnValue = waitingOnValueFromApprovalKind(approvalKind);
+      }
     }
   } else {
-    // WAITING_STATE_REPORTED - use the object
     waitingOnValue = latestWaiting.object || "Response";
+  }
+
+  if (waitingOnValue === null) {
+    return {
+      id: "waiting-on",
+      label: "Waiting On",
+      value: "Unknown",
+      state: "UNKNOWN",
+      evidenceIds: [],
+    };
   }
 
   return {
@@ -730,75 +751,21 @@ export function deriveWaitingOnSlot(
 }
 
 /**
- * Helper: Derive approval type from action text (fallback when structured data unavailable).
- * Returns "Client approval", "Attorney approval", "Review", "Decision", or "Approval".
- * 
- * Checks named approver before keywords, normalizes apostrophes, uses whole-token matching.
- */
-function deriveApprovalTypeFromText(action: string, clientName: string): string {
-  const actionLower = action.toLowerCase();
-  
-  // Normalize apostrophes (straight and curly) - handle all Unicode apostrophe variants
-  const normalizedAction = actionLower.replace(/[\u2019\u0027\u2018]/g, "'");
-  const normalizedClient = clientName.toLowerCase().replace(/[\u2019\u0027\u2018]/g, "'");
-  
-  // Check for named approver first (before keywords)
-  // Look for pattern: requested/asked [Name]'s approval/decision/review
-  // Anchor to requested/asked to avoid capturing preceding words as part of the name
-  const possessiveMatch = normalizedAction.match(/(?:requested|asked)\s+([a-z]+(?:[-'][a-z]+)*(?:\s+[a-z]+(?:[-'][a-z]+)*)*)'s\s+(?:approval|decision|review)/);
-  
-  if (possessiveMatch) {
-    const nameInAction = possessiveMatch[1].trim();
-    
-    // Check if the name matches the client (full name or surname)
-    // Use whole-token matching
-    const clientTokens = normalizedClient.split(/\s+/);
-    const surname = clientTokens[clientTokens.length - 1];
-    
-    if (nameInAction === normalizedClient || nameInAction === surname) {
-      return "Client approval";
-    } else {
-      // Non-client approval
-      return "Approval";
-    }
-  }
-  
-  // Keyword-based detection (no named approver found)
-  if (actionLower.includes("client approval") || actionLower.includes("client's approval")) {
-    return "Client approval";
-  } else if (actionLower.includes("attorney approval") || actionLower.includes("attorney's approval")) {
-    return "Attorney approval";
-  } else if (actionLower.includes("review")) {
-    return "Review";
-  } else if (actionLower.includes("decision")) {
-    return "Decision";
-  } else if (actionLower.includes("approval") || actionLower.includes("approve")) {
-    return "Approval";
-  } else {
-    return "Approval";
-  }
-}
-
-/**
  * Derives the current-status slot from operational events using supersession reasoning.
  *
- * This is the supersession-type slot: it identifies events that supersede
- * earlier events and constructs the current status from non-superseded events.
- *
- * Supersession rule: A WAITING_STATE_REPORTED event is superseded by a later
- * DOCUMENT_SENT or APPROVAL_REQUESTED event that fulfills what was being waited for.
- *
- * Status derivation: The status text is constructed from the action and object
- * fields of the most recent non-superseded events, ordered by timestamp.
- *
- * Deterministic: Uses only event timestamps (with eventId as tie-breaker) and
- * semantic event fields. No AI, models, or fixture-specific strings.
+ * A WAITING_STATE_REPORTED event is superseded by a later DOCUMENT_SENT,
+ * APPROVAL_REQUESTED, or DOCUMENT_REVIEWED event. Status sentences are
+ * composed from semantics.documentForm, semantics.documentSubject, and
+ * semantics.approvalKind — never by parsing action or object text.
+ * Object is used only as a display noun when documentForm is plain or
+ * omitted.
  */
 export function deriveCurrentStatusSlot(
   events: OperationalEvent[],
   matterId: string,
   matter: SyntheticMatter,
 ): StatusClaim {
+  void matter;
   const matterEvents = events.filter((e) => e.matterId === matterId);
 
   if (matterEvents.length === 0) {
@@ -811,18 +778,15 @@ export function deriveCurrentStatusSlot(
     };
   }
 
-  // Get the latest event by timestamp (with eventId as tie-breaker)
   const latestEvent = matterEvents.reduce((latest, current) => {
     const latestTime = new Date(latest.provenance.sourceRecordedAt).getTime();
     const currentTime = new Date(current.provenance.sourceRecordedAt).getTime();
-    
+
     if (currentTime > latestTime) return current;
     if (currentTime < latestTime) return latest;
-    // Tie-break: use lexicographic comparison of eventId
     return current.eventId > latest.eventId ? current : latest;
   });
 
-  // Identify superseded waiting events
   const waitingEvents = matterEvents.filter(
     (e) => e.eventType === "WAITING_STATE_REPORTED",
   );
@@ -833,7 +797,6 @@ export function deriveCurrentStatusSlot(
       waitingEvent.provenance.sourceRecordedAt,
     ).getTime();
 
-    // Check if any later event supersedes this waiting event
     for (const event of matterEvents) {
       if (
         event.eventType === "DOCUMENT_SENT" ||
@@ -853,30 +816,27 @@ export function deriveCurrentStatusSlot(
     }
   }
 
-  // Build status from non-superseded events, using the latest by timestamp
   const activeWaitingEvents = waitingEvents.filter(
     (e) => !supersededWaitingIds.has(e.eventId),
   );
 
-  // If we have an approval request, describe what's being waited for
   const approvalEvents = matterEvents.filter(
     (e) => e.eventType === "APPROVAL_REQUESTED",
   );
-  
+
   if (approvalEvents.length > 0) {
     const latestApproval = approvalEvents.reduce((latest, current) => {
       const latestTime = new Date(latest.provenance.sourceRecordedAt).getTime();
       const currentTime = new Date(current.provenance.sourceRecordedAt).getTime();
-      
+
       if (currentTime > latestTime) return current;
       if (currentTime < latestTime) return latest;
       return current.eventId > latest.eventId ? current : latest;
     });
 
-    // Find the most recent document event before or concurrent with the approval
     const docEvents = matterEvents.filter((e) => e.eventType === "DOCUMENT_SENT");
     const approvalTime = new Date(latestApproval.provenance.sourceRecordedAt).getTime();
-    
+
     const relevantDocs = docEvents.filter((doc) => {
       const docTime = new Date(doc.provenance.sourceRecordedAt).getTime();
       return docTime <= approvalTime;
@@ -886,94 +846,16 @@ export function deriveCurrentStatusSlot(
       const latestDoc = relevantDocs.reduce((latest, current) => {
         const latestTime = new Date(latest.provenance.sourceRecordedAt).getTime();
         const currentTime = new Date(current.provenance.sourceRecordedAt).getTime();
-        
+
         if (currentTime > latestTime) return current;
         if (currentTime < latestTime) return latest;
         return current.eventId > latest.eventId ? current : latest;
       });
 
-      // Derive status from the approval action and document context.
-      // Match against a lowercased copy; keep the original object casing
-      // in the emitted status, the same way next-action does.
-      const approvalAction = latestApproval.action.toLowerCase();
-      const rawObject = latestDoc.object || latestApproval.object || "document";
-      const docObject = rawObject.toLowerCase();
-      
-      // Extract the approval target from the action
-      // Priority: review > client approval > attorney approval > approval > decision
-      let approvalTarget = "approval";
-      
-      // Check for review first (takes priority over approval if both are present)
-      if (approvalAction.includes("review")) {
-        if (approvalAction.includes("attorney")) {
-          approvalTarget = "attorney review";
-        } else if (approvalAction.includes("client")) {
-          approvalTarget = "client review";
-        } else {
-          approvalTarget = "review";
-        }
-      } else if (approvalAction.includes("approval")) {
-        if (approvalAction.includes("client")) {
-          approvalTarget = "client approval";
-        } else if (approvalAction.includes("your approval")) {
-          // "your approval" indicates approval from the recipient (typically client)
-          approvalTarget = "client approval";
-        } else if (approvalAction.includes("attorney")) {
-          approvalTarget = "attorney approval";
-        } else {
-          // Check for possessive patterns like "Requested [Name]'s approval"
-          const possessiveMatch = approvalAction.match(
-            /requested\s+([\w\s]+)'s\s+approval/i,
-          );
-          if (possessiveMatch) {
-            const nameInAction = possessiveMatch[1].trim();
-            const clientName = matter.client.toLowerCase();
-            
-            // Check if the name in the action matches the client name
-            // (case-insensitive, handles full name or last name)
-            if (
-              clientName.includes(nameInAction.toLowerCase()) ||
-              nameInAction.toLowerCase().includes(clientName)
-            ) {
-              approvalTarget = "client approval";
-            } else {
-              // Use the specific person's name, not "client"
-              approvalTarget = `${nameInAction}'s approval`;
-            }
-          } else {
-            approvalTarget = "approval";
-          }
-        }
-      } else if (approvalAction.includes("decision")) {
-        approvalTarget = "decision";
-      }
-      
-      // Construct a natural status sentence from the document context and approval target
-      // Pattern: "{doc description} {is/are} awaiting {approval target}."
-      let statusText: string;
-      
-      // Detect if the document is about revisions/changes
-      if (docObject.includes("revised") || docObject.includes("revision")) {
-        // Extract the base subject (e.g., "settlement" from "revised settlement language")
-        const subjectMatch = rawObject.match(/revised?\s+(\S+)/i);
-        const subject = subjectMatch ? subjectMatch[1] : "document";
-        statusText = `${subject.charAt(0).toUpperCase() + subject.slice(1)} revisions are awaiting ${approvalTarget}.`;
-      } else if (docObject.includes("draft")) {
-        const subjectMatch = rawObject.match(/draft\s+(\S+)/i);
-        const subject = subjectMatch ? subjectMatch[1] : "document";
-        statusText = `Draft ${subject} is awaiting ${approvalTarget}.`;
-      } else if (docObject.includes("proposed")) {
-        const subjectMatch = rawObject.match(/proposed\s+(\S+)/i);
-        const subject = subjectMatch ? subjectMatch[1] : "document";
-        statusText = `Proposed ${subject} is awaiting ${approvalTarget}.`;
-      } else {
-        statusText = `${rawObject} awaiting ${approvalTarget}.`;
-      }
-
       return {
         id: "current-status",
         label: "Current Status",
-        value: statusText,
+        value: currentStatusFromDocument(latestDoc, latestApproval),
         state: "SUPPORTED",
         evidenceIds: [
           latestDoc.provenance.sourceArtifactId,
@@ -982,7 +864,6 @@ export function deriveCurrentStatusSlot(
       };
     }
 
-    // Just approval, no document context
     const approvalObject = latestApproval.object || "approval";
     return {
       id: "current-status",
@@ -993,12 +874,11 @@ export function deriveCurrentStatusSlot(
     };
   }
 
-  // If we have active (non-superseded) waiting events
   if (activeWaitingEvents.length > 0) {
     const latestWaiting = activeWaitingEvents.reduce((latest, current) => {
       const latestTime = new Date(latest.provenance.sourceRecordedAt).getTime();
       const currentTime = new Date(current.provenance.sourceRecordedAt).getTime();
-      
+
       if (currentTime > latestTime) return current;
       if (currentTime < latestTime) return latest;
       return current.eventId > latest.eventId ? current : latest;
@@ -1014,10 +894,9 @@ export function deriveCurrentStatusSlot(
     };
   }
 
-  // Fallback: describe the latest event
   const eventType = latestEvent.eventType.toLowerCase().replace(/_/g, " ");
   const eventObject = latestEvent.object || "matter";
-  
+
   return {
     id: "current-status",
     label: "Current Status",
@@ -1079,20 +958,14 @@ function nextActionAfterApprovalWithoutExternalSender(
 /**
  * Derives the next-action slot from operational events.
  *
- * Inference-type slot: reasons about the action that should follow the
- * current operational state.
+ * Inference-type slot: the action that should follow the current
+ * operational state. Values are INFERRED or UNKNOWN.
  *
- * - Open, non-stale APPROVAL_REQUESTED: respond to the latest external
- *   document sender after the pending approval.
- * - Open WAITING_STATE_REPORTED: act after receiving the waited-for object.
- * - Otherwise infer from the latest substantive event, or UNKNOWN.
- *
- * Approvals go stale when the matter is later Settled/Closed, a later
- * client document exists, or about six months of silence have elapsed.
- * Client identity uses structured recipient matching (and PR #7's text
- * fallback). Actor roles use whole-label mapping; personal/org names keep
- * their original casing. Never emits "Respond to <client>" or
- * "Respond to <our attorney/firm>".
+ * Approvals go stale when the matter is later Settled/Closed
+ * (semantics.recordedStatus), a later client document exists, or about
+ * six months of silence have elapsed. Client identity uses structured
+ * recipient matching, then semantics.approvalKind. Action text is never
+ * parsed.
  */
 export function deriveNextActionSlot(
   events: OperationalEvent[],
@@ -1208,16 +1081,6 @@ export function deriveNextActionSlot(
   return unknownNextAction();
 }
 
-const ATTORNEY_OWNER_ROLE_LABELS = new Set([
-  "attorney",
-  "our attorney",
-  "responsible attorney",
-  "counsel of record",
-  "owner",
-  "matter owner",
-  "assigned attorney",
-]);
-
 function unknownOwner(): StatusClaim {
   return {
     id: "owner",
@@ -1236,11 +1099,6 @@ function isExcludedOwnerLabel(label: string, matter: SyntheticMatter): boolean {
     COURT_ROLE_LABELS.has(normalized) ||
     normalized === "opposing counsel"
   );
-}
-
-function isResponsibilityRoleLabel(label: string | null): boolean {
-  if (!label) return false;
-  return ATTORNEY_OWNER_ROLE_LABELS.has(normalizedActorLabel(label));
 }
 
 function firmSideIdentities(
@@ -1291,106 +1149,6 @@ function resolveOwnerFromArtifact(
   return null;
 }
 
-function actionMentionsPerson(action: string, personName: string): boolean {
-  const trimmed = personName.trim();
-  if (!trimmed) return false;
-  const escaped = trimmed.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`\\b${escaped}\\b`, "i").test(action);
-}
-
-function boundPersonName(personName: string): string {
-  return personName.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function mentionedFirmSideIdentities(
-  text: string,
-  matter: SyntheticMatter,
-  requestingUser: SyntheticUser
-): string[] {
-  return firmSideIdentities(matter, requestingUser).filter((name) =>
-    actionMentionsPerson(text, name)
-  );
-}
-
-function normalizedStatement(text: string): string {
-  return text.trim().replace(/[.]+$/g, "").trim();
-}
-
-/**
- * Split on clause boundaries. `and` starts a new clause only when it
- * introduces a file transfer (resigned and the file was reassigned to
- * Y). Any leftover `and` in the final clause makes that clause
- * multi-part and therefore not clean.
- */
-function splitOwnerClauses(text: string): string[] {
-  return normalizedStatement(text)
-    .split(
-      /(?:[.;]+|\s+\bbut\b\s+|,?\s*\bthen\b\s+|\s+\band\s+(?=(?:the\s+file\s+was\s+)?(?:reassigned|transferred|handed(?:\s+off)?)\s+to\b))/i
-    )
-    .map((clause) => clause.trim())
-    .filter((clause) => clause.length > 0);
-}
-
-function isMultiPartOwnerClause(clause: string): boolean {
-  return /\band\b/i.test(clause);
-}
-
-function clauseStartsHistorical(clause: string): boolean {
-  return /^(?:at\s+first|originally|previously|formerly|initially)\b/i.test(
-    clause
-  );
-}
-
-/**
- * The final clause is a clean positive assignment or transfer TO this
- * known identity, with nothing after that assignment in the clause.
- * Earlier departure clauses about other people are ignored.
- */
-function isCleanPositiveClause(clause: string, name: string): boolean {
-  const escaped = boundPersonName(name);
-  if (!escaped) return false;
-  const text = normalizedStatement(clause);
-  if (clauseStartsHistorical(text)) return false;
-  return [
-    `^(?:recorded|assigned|named|designated|appointed)\\s+${escaped}\\s+as\\s+(?:the\\s+)?(?:responsible\\s+attorney|owner|counsel(?:\\s+of\\s+record)?)$`,
-    `^(?:now\\s+)?(?:the\\s+file\\s+was\\s+)?(?:assigned|reassigned|transferred|handed(?:\\s+off)?)\\s+to\\s+${escaped}$`,
-    `^(?:transferred|reassigned|handed(?:\\s+off)?)\\s+from\\b[\\s\\S]+?\\bto\\s+${escaped}$`,
-    `(?:^|and\\s+)(?:noted\\s+that\\s+)?${escaped}\\s+(?:took\\s+over|has\\s+taken\\s+over|is\\s+taking\\s+over)(?:\\s+from\\b.*)?$`,
-    `(?:^|and\\s+)(?:noted\\s+that\\s+)?${escaped}\\s+(?:will\\s+handle|is\\s+handling|handles)(?:\\s+[\\w][\\w\\s'-]*)?$`,
-    `^[\\s\\S]*?\\bwas\\s+replaced\\s+by\\s+${escaped}$`,
-    `^replaced\\s+by\\s+${escaped}$`,
-    `^succeeded\\s+by\\s+${escaped}$`,
-  ].some((source) => new RegExp(source, "i").test(text));
-}
-
-/**
- * Text fallback: the final clause is a clean positive assignment or
- * transfer TO a known firm-side identity, and nothing after it reverses
- * it. Earlier departure clauses about other people are fine. Extra
- * clauses in the final position, or more than one assigned name in that
- * clause, are UNKNOWN.
- */
-function inferOwnerFromActionText(
-  action: string,
-  matter: SyntheticMatter,
-  requestingUser: SyntheticUser
-): string | null {
-  const clauses = splitOwnerClauses(action);
-  const last = clauses[clauses.length - 1];
-  if (!last || clauseStartsHistorical(last) || isMultiPartOwnerClause(last)) {
-    return null;
-  }
-  const assigned = mentionedFirmSideIdentities(
-    last,
-    matter,
-    requestingUser
-  ).filter((name) => isCleanPositiveClause(last, name));
-  if (assigned.length === 1) {
-    return assigned[0];
-  }
-  return null;
-}
-
 function ownerClaim(
   value: string,
   state: "SUPPORTED" | "INFERRED",
@@ -1408,20 +1166,12 @@ function ownerClaim(
 /**
  * Derives the owner slot from operational events.
  *
- * Structured data first: the latest RESPONSIBILITY_RECORDED event at or
- * before asOf. Actor and object must themselves be known firm-side
- * identities (responsible attorney or requesting user). A role label
- * such as "Responsible attorney" is not the person. Email local-part
- * matching is used when the source artifact identifies a known person.
- * Text is an INFERRED fallback only when the final clause is a clean
- * positive assignment or transfer TO a known firm-side identity, with
- * nothing after that assignment reversing it. Earlier departure clauses
- * about other people are fine. Extra clauses in the final position, or
- * more than one assigned name, are UNKNOWN.
- *
- * Smith v. Acme is SUPPORTED because its event action is
- * "Recorded Alex Thompson as the responsible attorney." — a clean
- * positive assignment of a known firm-side identity, not a special case.
+ * Structured data only: the latest RESPONSIBILITY_RECORDED event at or
+ * before asOf. semantics.assignedPerson is the current assignee when the
+ * event records one; explicit null means no current assignee. When
+ * assignedPerson is omitted, actor, then object, then source-email
+ * local-part are matched against known firm-side identities. Action text
+ * is never parsed. Invalid asOf is UNKNOWN.
  */
 export function deriveOwnerSlot(
   events: OperationalEvent[],
@@ -1452,6 +1202,19 @@ export function deriveOwnerSlot(
     (item) => item.id === latest.provenance.sourceArtifactId
   );
   const evidenceId = latest.provenance.sourceArtifactId;
+  const semantics = eventSemantics(latest);
+
+  if (Object.prototype.hasOwnProperty.call(semantics, "assignedPerson")) {
+    const assigned = semantics.assignedPerson;
+    if (!assigned) {
+      return unknownOwner();
+    }
+    const matched = matchFirmSideIdentity(assigned, matter, requestingUser);
+    if (matched) {
+      return ownerClaim(matched, "SUPPORTED", evidenceId);
+    }
+    return unknownOwner();
+  }
 
   const structuredOwner =
     matchFirmSideIdentity(latest.actor, matter, requestingUser) ??
@@ -1462,22 +1225,6 @@ export function deriveOwnerSlot(
     return ownerClaim(structuredOwner, "SUPPORTED", evidenceId);
   }
 
-  const textOwner = inferOwnerFromActionText(
-    latest.action,
-    matter,
-    requestingUser
-  );
-  if (textOwner) {
-    const recordedAsResponsibility =
-      isResponsibilityRoleLabel(latest.object) ||
-      isResponsibilityRoleLabel(latest.actor);
-    return ownerClaim(
-      textOwner,
-      recordedAsResponsibility ? "SUPPORTED" : "INFERRED",
-      evidenceId
-    );
-  }
-
   return unknownOwner();
 }
 
@@ -1485,38 +1232,6 @@ type CalendarDate = {
   year: number;
   month: number;
   day: number;
-};
-
-type CalendarDateMatch = CalendarDate & {
-  index: number;
-  length: number;
-};
-
-const MONTH_INDEX: Record<string, number> = {
-  january: 0,
-  jan: 0,
-  february: 1,
-  feb: 1,
-  march: 2,
-  mar: 2,
-  april: 3,
-  apr: 3,
-  may: 4,
-  june: 5,
-  jun: 5,
-  july: 6,
-  jul: 6,
-  august: 7,
-  aug: 7,
-  september: 8,
-  sept: 8,
-  sep: 8,
-  october: 9,
-  oct: 9,
-  november: 10,
-  nov: 10,
-  december: 11,
-  dec: 11,
 };
 
 function isValidCalendarDate(
@@ -1572,6 +1287,11 @@ function calendarDateFromParts(
   return { year, month, day };
 }
 
+/**
+ * Parse a complete calendar date from a structured field (semantics.scheduledDate
+ * or object). ISO YYYY-MM-DD, long-form month names, and US MM/DD/YYYY are
+ * accepted. This is field parsing of a date value, not narrative text inference.
+ */
 function parseCompleteCalendarDate(text: string): CalendarDate | null {
   const trimmed = text.trim();
   const iso = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})(?:T.*)?$/);
@@ -1583,7 +1303,33 @@ function parseCompleteCalendarDate(text: string): CalendarDate | null {
     );
   }
 
-  const monthNames = Object.keys(MONTH_INDEX).join("|");
+  const monthIndex: Record<string, number> = {
+    january: 0,
+    jan: 0,
+    february: 1,
+    feb: 1,
+    march: 2,
+    mar: 2,
+    april: 3,
+    apr: 3,
+    may: 4,
+    june: 5,
+    jun: 5,
+    july: 6,
+    jul: 6,
+    august: 7,
+    aug: 7,
+    september: 8,
+    sept: 8,
+    sep: 8,
+    october: 9,
+    oct: 9,
+    november: 10,
+    nov: 10,
+    december: 11,
+    dec: 11,
+  };
+  const monthNames = Object.keys(monthIndex).join("|");
   const longForm = trimmed.match(
     new RegExp(
       `^(${monthNames})\\s+(\\d{1,2})(?:st|nd|rd|th)?,?\\s+(\\d{4})$`,
@@ -1593,7 +1339,7 @@ function parseCompleteCalendarDate(text: string): CalendarDate | null {
   if (longForm) {
     return calendarDateFromParts(
       Number(longForm[3]),
-      MONTH_INDEX[longForm[1].toLowerCase()],
+      monthIndex[longForm[1].toLowerCase()],
       Number(longForm[2])
     );
   }
@@ -1610,250 +1356,6 @@ function parseCompleteCalendarDate(text: string): CalendarDate | null {
   return null;
 }
 
-function findCalendarDatesInText(text: string): CalendarDateMatch[] {
-  const matches: CalendarDateMatch[] = [];
-  const monthNames = Object.keys(MONTH_INDEX).join("|");
-
-  for (const match of text.matchAll(/\b(\d{4})-(\d{2})-(\d{2})\b/g)) {
-    if (match.index === undefined) continue;
-    const date = calendarDateFromParts(
-      Number(match[1]),
-      Number(match[2]) - 1,
-      Number(match[3])
-    );
-    if (date) {
-      matches.push({ ...date, index: match.index, length: match[0].length });
-    }
-  }
-
-  for (const match of text.matchAll(
-    new RegExp(
-      `\\b(${monthNames})\\s+(\\d{1,2})(?:st|nd|rd|th)?,?\\s+(\\d{4})\\b`,
-      "gi"
-    )
-  )) {
-    if (match.index === undefined) continue;
-    const date = calendarDateFromParts(
-      Number(match[3]),
-      MONTH_INDEX[match[1].toLowerCase()],
-      Number(match[2])
-    );
-    if (date) {
-      matches.push({ ...date, index: match.index, length: match[0].length });
-    }
-  }
-
-  for (const match of text.matchAll(/\b(\d{1,2})\/(\d{1,2})\/(\d{4})\b/g)) {
-    if (match.index === undefined) continue;
-    const date = calendarDateFromParts(
-      Number(match[3]),
-      Number(match[1]) - 1,
-      Number(match[2])
-    );
-    if (date) {
-      matches.push({ ...date, index: match.index, length: match[0].length });
-    }
-  }
-
-  return matches.sort((left, right) => left.index - right.index);
-}
-
-function datesEqual(left: CalendarDate, right: CalendarDate): boolean {
-  return (
-    left.year === right.year &&
-    left.month === right.month &&
-    left.day === right.day
-  );
-}
-
-function caseInsensitiveToken(word: string): string {
-  return word.replace(/[A-Za-z]/g, (ch) => `[${ch.toUpperCase()}${ch.toLowerCase()}]`);
-}
-
-function caseInsensitivePhrase(phrase: string): string {
-  return phrase.split(/\s+/).map(caseInsensitiveToken).join("\\s+");
-}
-
-function calendarDateTokenPattern(): string {
-  const monthNames = Object.keys(MONTH_INDEX)
-    .map(caseInsensitiveToken)
-    .join("|");
-  return `(?:\\d{4}-\\d{2}-\\d{2}|(?:${monthNames})\\s+\\d{1,2}(?:st|nd|rd|th)?,?\\s+\\d{4}|\\d{1,2}/\\d{1,2}/\\d{4})`;
-}
-
-function scheduleSubjectPattern(): string {
-  const head = [
-    "Motion hearing",
-    "Status conference",
-    "Hearing",
-    "Trial",
-    "Deposition",
-    "Mediation",
-    "Conference",
-    "Deadline",
-    "Response",
-    "Filing",
-  ]
-    .map(caseInsensitivePhrase)
-    .join("|");
-  const ofName =
-    "(?:\\s+[Oo][Ff]\\s+[A-Z][A-Za-z'-]*(?:\\s+[A-Z][A-Za-z'-]*){0,2})?";
-  return `(?:${head}${ofName})`;
-}
-
-function schedulePlaceWordPattern(): string {
-  const stems = [
-    "cancel",
-    "vacat",
-    "postpon",
-    "stay",
-    "stricken",
-    "struck",
-    "off",
-    "continu",
-    "tbd",
-    "tba",
-    "adjourn",
-    "defer",
-    "suspend",
-    "withdraw",
-    "drop",
-    "moot",
-    "hold",
-    "remov",
-  ]
-    .map(caseInsensitiveToken)
-    .join("|");
-  // Title case only: first letter upper, rest not ALL-CAPS.
-  return `(?!(?:${stems}))[A-Z][a-z]+(?:['-][A-Za-z]+)*`;
-}
-
-function scheduleRoomNumberPattern(): string {
-  return "[A-Za-z]?[0-9]+[A-Za-z]?";
-}
-
-function schedulePlacePattern(): string {
-  const room = `(?:(?:${["Courtroom", "Room", "Dept", "Department"].map(caseInsensitiveToken).join("|")})\\.?\\s+${scheduleRoomNumberPattern()})`;
-  const word = schedulePlaceWordPattern();
-  return `(?:${room}|${word})`;
-}
-
-function scheduleTimePattern(): string {
-  return "(?:\\d{1,2}(?::\\d{2})?\\s*[AaPp]\\.?[Mm]\\.?)";
-}
-
-function scheduleAfterDatePattern(): string {
-  const time = `(?:\\s+[Aa][Tt]\\s+${scheduleTimePattern()})?`;
-  const place = `(?:\\s+(?:[Ii][Nn]|[Aa][Tt])\\s+${schedulePlacePattern()})?`;
-  return `${time}${place}`;
-}
-
-function hasForbiddenScheduleWords(text: string): boolean {
-  return /\b(?:not|never|no|will|be|who|which|that)\b/i.test(text);
-}
-
-function statementHasMultipleSentences(text: string): boolean {
-  if (splitScheduleSentences(text).length !== 1) return true;
-  const withoutFinalStop = text.trim().replace(/[.?!]+$/, "");
-  return /[.?!]/.test(withoutFinalStop);
-}
-
-function splitScheduleSentences(text: string): string[] {
-  return text
-    .trim()
-    .split(/(?<=\S)\.(?:\s+|$)/)
-    .map((sentence) => sentence.trim())
-    .filter((sentence) => sentence.length > 0);
-}
-
-function hasUniqueScheduleResult(dates: CalendarDate[]): boolean {
-  const unique = dates.filter(
-    (date, index, all) =>
-      all.findIndex((other) => datesEqual(other, date)) === index
-  );
-  // Defensive: the whole-text template already yields at most one date.
-  return unique.length === 1;
-}
-
-function isScheduleTargetDate(text: string, date: CalendarDateMatch): boolean {
-  const before = text.slice(0, date.index);
-  if (
-    /(?:\bset\s+for|\bscheduled\s+for|\bdue\s+by|\bdue|\bby)\s+$/i.test(before)
-  ) {
-    return true;
-  }
-  return new RegExp(
-    `\\b(?:continued|moved|rescheduled)(?:\\s+from\\s+${calendarDateTokenPattern()})?\\s+to\\s+$`,
-    "i"
-  ).test(before);
-}
-
-function allScheduleTargetDates(text: string): CalendarDate[] {
-  return findCalendarDatesInText(text).filter((date) =>
-    isScheduleTargetDate(text, date)
-  );
-}
-
-function matchWholeTextScheduleTemplate(text: string): CalendarDate | null {
-  const date = calendarDateTokenPattern();
-  const after = scheduleAfterDatePattern();
-  const subject = `(?:${scheduleSubjectPattern()}\\s+)?`;
-  const setForm = `(?:${["set for", "scheduled for", "due by", "due", "by"].map(caseInsensitivePhrase).join("|")})`;
-  const continuance = `(?:${["continued", "moved", "rescheduled"].map(caseInsensitiveToken).join("|")})(?:\\s+${caseInsensitiveToken("from")}\\s+${date})?\\s+${caseInsensitiveToken("to")}`;
-  const setMatch = text
-    .trim()
-    .match(new RegExp(`^${subject}${setForm}\\s+(${date})${after}\\.?$`));
-  if (setMatch) {
-    return parseCompleteCalendarDate(setMatch[1]);
-  }
-  const continued = text
-    .trim()
-    .match(new RegExp(`^${subject}${continuance}\\s+(${date})${after}\\.?$`));
-  if (continued) {
-    return parseCompleteCalendarDate(continued[1]);
-  }
-  return null;
-}
-
-function pickUniqueScheduleDate(
-  matched: CalendarDate | null,
-  targets: CalendarDate[]
-): CalendarDate | null {
-  // Defensive: the whole-text template already yields at most one date.
-  if (!hasUniqueScheduleResult(targets)) return null;
-  return matched;
-}
-
-/**
- * Text fallback: the whole trimmed event text must match one schedule
- * template. Anything else is UNKNOWN.
- *
- *   SUBJECT (set for|scheduled for|due|due by|by) DATE [at TIME] [in|at PLACE] [.]
- *   SUBJECT (continued|moved|rescheduled) [from DATE] to DATE [at TIME] [in|at PLACE] [.]
- */
-function inferStrictScheduleDate(text: string): CalendarDate | null {
-  const statement = text.trim();
-  if (!statement) return null;
-  if (hasForbiddenScheduleWords(statement)) return null;
-  if (statementHasMultipleSentences(statement)) return null;
-  const sentence = splitScheduleSentences(statement)[0] ?? statement;
-  return pickUniqueScheduleDate(
-    matchWholeTextScheduleTemplate(sentence),
-    allScheduleTargetDates(statement)
-  );
-}
-
-/**
- * Text fallback: keep a date only when the whole event text matches
- * the strict schedule template and yields exactly one date.
- */
-function pickCurrentCalendarDate(
-  _dates: CalendarDateMatch[],
-  text: string
-): CalendarDate | null {
-  return inferStrictScheduleDate(text);
-}
-
 function unknownImportantDate(): StatusClaim {
   return {
     id: "important-date",
@@ -1866,39 +1368,38 @@ function unknownImportantDate(): StatusClaim {
 
 function importantDateClaim(
   date: CalendarDate,
-  state: "SUPPORTED" | "INFERRED",
   evidenceId: string
 ): StatusClaim {
   return {
     id: "important-date",
     label: "Deadline / Important Date",
     value: formatCalendarDate(date),
-    state,
+    state: "SUPPORTED",
     evidenceIds: [evidenceId],
   };
+}
+
+function currentScheduleDate(event: OperationalEvent): CalendarDate | null {
+  const semantics = eventSemantics(event);
+  if (Object.prototype.hasOwnProperty.call(semantics, "scheduledDate")) {
+    const scheduledDate = semantics.scheduledDate;
+    if (!scheduledDate) {
+      return null;
+    }
+    return parseCompleteCalendarDate(scheduledDate);
+  }
+  return parseCompleteCalendarDate(event.object ?? "");
 }
 
 /**
  * Derives the important-date slot from operational events.
  *
- * Structured data first: the latest SCHEDULE_STATUS_REPORTED event at or
- * before asOf, via getLatestEvent. If the object itself is a complete
- * valid calendar date, that date is SUPPORTED. Otherwise text is an
- * INFERRED fallback only when the whole trimmed action matches one
- * schedule template (plain subject, set for/scheduled for/due/due by/by
- * or continued/moved/rescheduled [from DATE] to DATE, optional time and
- * place). Extra sentences, extra place text, forbidden words, and two
- * or more resulting dates are UNKNOWN. Relative phrasing and bare "to"
- * are UNKNOWN. Numeric dates in text are US MM/DD/YYYY. Comparison with
- * asOf is by UTC calendar day.
- *
- * Later schedule events supersede earlier ones. A date whose UTC
- * calendar day is before asOf is no longer current.
- *
- * Event timestamps are when the report was recorded, not the scheduled
- * date. Smith v. Acme is UNKNOWN because its schedule event object is
- * not a date and its action has no explicit calendar date — not
- * because a fixture phrase is special-cased.
+ * Structured data only: the latest SCHEDULE_STATUS_REPORTED event at or
+ * before asOf. semantics.scheduledDate is the current date when present;
+ * explicit null means no current date (cancelled, TBD, relative phrasing).
+ * When scheduledDate is omitted, `object` is used only if it itself is a
+ * complete calendar date. Action text is never parsed. A date whose UTC
+ * calendar day is before asOf is no longer current. Invalid asOf is UNKNOWN.
  */
 export function deriveImportantDateSlot(
   events: OperationalEvent[],
@@ -1923,21 +1424,10 @@ export function deriveImportantDateSlot(
 
   const latest = getLatestEvent(scheduleEvents);
   const evidenceId = latest.provenance.sourceArtifactId;
+  const structuredDate = currentScheduleDate(latest);
 
-  const structuredDate = parseCompleteCalendarDate(latest.object ?? "");
-  if (structuredDate) {
-    if (!isCalendarDateCurrentAsOf(structuredDate, asOfTime)) {
-      return unknownImportantDate();
-    }
-    return importantDateClaim(structuredDate, "SUPPORTED", evidenceId);
-  }
-
-  const inferredDate = pickCurrentCalendarDate(
-    findCalendarDatesInText(latest.action),
-    latest.action
-  );
-  if (inferredDate && isCalendarDateCurrentAsOf(inferredDate, asOfTime)) {
-    return importantDateClaim(inferredDate, "INFERRED", evidenceId);
+  if (structuredDate && isCalendarDateCurrentAsOf(structuredDate, asOfTime)) {
+    return importantDateClaim(structuredDate, evidenceId);
   }
 
   return unknownImportantDate();
@@ -1955,14 +1445,13 @@ function unknownSignificantNewInformation(): StatusClaim {
 
 function significantNewInformationClaim(
   value: string,
-  state: "SUPPORTED" | "INFERRED",
   evidenceId: string
 ): StatusClaim {
   return {
     id: "significant-information",
     label: "Significant New Information",
     value,
-    state,
+    state: "SUPPORTED",
     evidenceIds: [evidenceId],
   };
 }
@@ -1990,29 +1479,10 @@ function formatSignificantNewInformation(event: OperationalEvent): string {
 /**
  * Derives the significant-information slot from operational events.
  *
- * "Significant information" is defined as evidence or documents
- * received from external parties (not the client, not our firm/attorney).
- * This slot identifies the most recent substantive information received
- * from opposing counsel, courts, third parties, or other external sources.
- *
- * Structured data first: the latest DOCUMENT_SENT event from an external
- * party at or before asOf, identified via actor matching.
- * 
- * External party detection: a sender counts as external ONLY when its actor
- * matches a known external role (opposing counsel, court, third party, etc.).
- * Everything else gives UNKNOWN, regardless of email domain.
- * 
- * Events from the client or our firm (responsible attorney, requesting user,
- * firm staff) are excluded. Events that cannot be classified (unknown
- * sender, no identifiable external role) give UNKNOWN.
- *
- * No text fallback is used: determining whether an event is from an external
- * party requires a structured actor matching a known external role.
- *
- * asOf is explicit; an invalid asOf gives UNKNOWN. Only events at or before
- * asOf are considered.
- *
- * Format: "{Actor} supplied {object} on {date}."
+ * Significant information is a document received from an external party.
+ * A sender counts as external ONLY when its actor matches a known external
+ * role. Everything else is UNKNOWN. Invalid asOf is UNKNOWN. Only events
+ * at or before asOf are considered. Action text is never parsed.
  */
 export function deriveSignificantNewInformationSlot(
   events: OperationalEvent[],
@@ -2022,6 +1492,8 @@ export function deriveSignificantNewInformationSlot(
   requestingUser: SyntheticUser,
   asOf: string
 ): StatusClaim {
+  void eligibleEvidence;
+  void requestingUser;
   const asOfTime = parseAsOfTime(asOf);
   if (asOfTime === null) {
     return unknownSignificantNewInformation();
@@ -2039,12 +1511,9 @@ export function deriveSignificantNewInformationSlot(
   }
 
   const externalDocumentEvents = documentEvents.filter((event) => {
-    // Exclude client and own side actors
     if (isClientActor(event.actor, matter)) {
       return false;
     }
-
-    // Accept only if actor matches a known external role
     return isExternalActor(event.actor);
   });
 
@@ -2053,11 +1522,8 @@ export function deriveSignificantNewInformationSlot(
   }
 
   const latest = getLatestEvent(externalDocumentEvents);
-  const evidenceId = latest.provenance.sourceArtifactId;
-
   return significantNewInformationClaim(
     formatSignificantNewInformation(latest),
-    "SUPPORTED",
-    evidenceId
+    latest.provenance.sourceArtifactId
   );
 }

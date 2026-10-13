@@ -15,7 +15,7 @@ Within that engagement, MatterMind V1 is testing whether a read-only product can
 
 ## Current phase: MatterMind V1 — Synthetic Vertical Slice
 
-Architecture Phase 1 is complete, and the Synthetic Vertical Slice is in progress. The current implementation reaches deterministic operational-event extraction. It does not yet reconstruct current state from those events.
+Architecture Phase 1 is complete, and the Synthetic Vertical Slice now runs the full structured path: authorized synthetic evidence, typed operational events, deterministic supersession, and all seven grounded brief slots.
 
 ### Architecture
 
@@ -27,7 +27,7 @@ The synthetic vertical slice uses Next.js, TypeScript, and Tailwind CSS. Product
 
 The first browser-based increment uses a synthetic evidence dataset and requires no external integrations.
 
-The current increment applies a deterministic evidence and operational-event boundary before reconstruction. It filters the synthetic artifact universe by explicit user authorization, evaluates matter association using authoritative or explicit identifiers, excludes ambiguous and unrelated artifacts, chronologically orders the eligible evidence set, and maps that eligible evidence to typed operational events using explicit synthetic ground truth.
+The current increment applies a deterministic evidence, operational-event, and current-state boundary. It filters the synthetic artifact universe by explicit user authorization, evaluates matter association using authoritative or explicit identifiers, excludes ambiguous and unrelated artifacts, chronologically orders the eligible evidence set, maps that eligible evidence to typed operational events using explicit synthetic ground truth, and derives every Matter Status Brief slot from those events' structured semantics.
 
 The implemented path is:
 
@@ -37,6 +37,8 @@ synthetic artifacts
 → matter association
 → eligibility
 → operational-event extraction
+→ current-state and supersession reasoning
+→ all 7 grounded brief slots
 ```
 
 An operational event records only what eligible evidence establishes happened or was recorded. It is not a conclusion about what is currently true. Historical events remain valid outputs even when later events may eventually supersede their operational significance.
@@ -47,18 +49,11 @@ The current synthetic case contains six eligible artifacts and produces seven ev
 
 `occurredAt` records when the underlying event is known to have happened. The separate source-record timestamp records when the source artifact was sent, created, or recorded and provides deterministic ordering when the actual occurrence time is unknown. Missing occurrence times and actors remain `null`; the extractor does not invent them.
 
-The next, deliberately unimplemented boundary is:
-
-```text
-operational events
-→ current-state and supersession reasoning
-```
-
 Current-state ground truth is defined for Smith v. Acme (matter-2026-0142). The fixture specifies expected current-state conclusions for each brief slot, including supersession relationships, supporting event IDs, and judgment rationales.
 
-**Deterministic current-state reasoning is partially implemented:** Six slots (current-status, last-important-event, waiting-on, next-action, owner, and important-date) are now derived from operational events. The remaining Matter Status Brief slot remains predefined synthetic output. Full current-state reasoning across all slots is not yet implemented.
+**All 7 Matter Status Brief slots are derived from structured operational events:** current-status, last-important-event, waiting-on, next-action, owner, important-date, and significant-information. Reasoners read typed event semantics (`approvalKind`, `documentForm`, `assignedPerson`, `scheduledDate`, `recordedStatus`, and related fields). Human-readable `action` and `object` remain display fields and are not parsed for meaning. SUPPORTED claims require a structured fact; invalid `asOf` is UNKNOWN; a missing fact is conservative UNKNOWN rather than a text inference.
 
-Not yet implemented: AI or model integration, current-state reasoning, supersession, event reconciliation or deduplication, real Clio or Microsoft 365 integrations, production authentication, production database or infrastructure, and legal deadline calculation or legal conclusions.
+Not yet implemented: AI or model integration, event reconciliation or deduplication, real Clio or Microsoft 365 integrations, production authentication, production database or infrastructure, and legal deadline calculation or legal conclusions.
 
 ```bash
 npm install

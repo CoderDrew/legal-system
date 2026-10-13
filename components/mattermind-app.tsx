@@ -80,7 +80,7 @@ const derivedSignificantInformationSlot = deriveSignificantNewInformationSlot(
   syntheticCurrentStateGroundTruth.asOf,
 );
 
-// Build the brief with derived slots and predefined other slots
+// Build the brief with all 7 slots derived from structured operational events.
 const matterBrief = {
   ...syntheticMatterBrief,
   claims: syntheticMatterBrief.claims.map((claim) => {

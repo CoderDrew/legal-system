@@ -130,6 +130,9 @@ test("the complete extracted event history matches independent ground truth", ()
       action:
         "Reported that the settlement conference remained scheduled for next month.",
       object: "Settlement conference",
+      semantics: {
+        scheduledDate: null,
+      },
       extractionMethod: "SYNTHETIC_GROUND_TRUTH",
       provenance: {
         sourceArtifactId: "email-0142-scheduling",
@@ -149,6 +152,7 @@ test("the complete extracted event history matches independent ground truth", ()
       action:
         "Reported that the matter team was waiting for opposing counsel to send revised settlement language.",
       object: "Revised settlement language",
+      semantics: {},
       extractionMethod: "SYNTHETIC_GROUND_TRUTH",
       provenance: {
         sourceArtifactId: "email-0142-waiting-on-counsel",
@@ -166,6 +170,10 @@ test("the complete extracted event history matches independent ground truth", ()
       actor: "Opposing counsel",
       action: "Sent revised settlement language to the matter team.",
       object: "Revised settlement language",
+      semantics: {
+        documentForm: "revised",
+        documentSubject: "settlement",
+      },
       extractionMethod: "SYNTHETIC_GROUND_TRUTH",
       provenance: {
         sourceArtifactId: "email-0142-revised-language",
@@ -184,6 +192,9 @@ test("the complete extracted event history matches independent ground truth", ()
       actor: null,
       action: "Recorded the matter status as Active.",
       object: "Matter status",
+      semantics: {
+        recordedStatus: "active",
+      },
       extractionMethod: "SYNTHETIC_GROUND_TRUTH",
       provenance: {
         sourceArtifactId: "clio-matter-0142",
@@ -201,6 +212,9 @@ test("the complete extracted event history matches independent ground truth", ()
       actor: null,
       action: "Recorded Alex Thompson as the responsible attorney.",
       object: "Responsible attorney",
+      semantics: {
+        assignedPerson: "Alex Thompson",
+      },
       extractionMethod: "SYNTHETIC_GROUND_TRUTH",
       provenance: {
         sourceArtifactId: "clio-matter-0142",
@@ -218,6 +232,9 @@ test("the complete extracted event history matches independent ground truth", ()
       actor: "Alex Thompson",
       action: "Requested Jordan Smith's approval before responding.",
       object: "Revised settlement language",
+      semantics: {
+        approvalKind: "client_approval",
+      },
       extractionMethod: "SYNTHETIC_GROUND_TRUTH",
       provenance: {
         sourceArtifactId: "email-0142-client-approval",
@@ -235,6 +252,7 @@ test("the complete extracted event history matches independent ground truth", ()
       actor: "Alex Thompson",
       action: "Reported reviewing the revised settlement language.",
       object: "Revised settlement language",
+      semantics: {},
       extractionMethod: "SYNTHETIC_GROUND_TRUTH",
       provenance: {
         sourceArtifactId: "email-0142-client-approval",
