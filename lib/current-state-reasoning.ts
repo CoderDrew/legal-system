@@ -1921,3 +1921,141 @@ export function deriveImportantDateSlot(
 
   return unknownImportantDate();
 }
+
+function unknownSignificantNewInformation(): StatusClaim {
+  return {
+    id: "significant-new-information",
+    label: "Significant New Information",
+    value: "Unknown",
+    state: "UNKNOWN",
+    evidenceIds: [],
+  };
+}
+
+function significantNewInformationClaim(
+  value: string,
+  state: "SUPPORTED" | "INFERRED",
+  evidenceId: string
+): StatusClaim {
+  return {
+    id: "significant-new-information",
+    label: "Significant New Information",
+    value,
+    state,
+    evidenceIds: [evidenceId],
+  };
+}
+
+/**
+ * Helper: Check if an event is from an external party (not client, not own side).
+ * An external party is anyone who is not the client and not our firm/attorney.
+ */
+function isEventFromExternalParty(
+  event: OperationalEvent,
+  matter: SyntheticMatter,
+  requestingUser: SyntheticUser,
+  eligibleEvidence: EligibleEvidenceItem[]
+): boolean {
+  if (
+    isClientActor(event.actor, matter) ||
+    isOwnSideActor(event.actor, matter, requestingUser)
+  ) {
+    return false;
+  }
+
+  const artifact = eligibleEvidence.find(
+    (item) => item.id === event.provenance.sourceArtifactId
+  );
+  if (
+    isEmailFromPerson(artifact, matter.client) ||
+    isEmailFromOwnSide(artifact, matter, requestingUser, eligibleEvidence)
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * Helper: Format the significant new information value from a DOCUMENT_SENT event.
+ * Template: "{Actor} supplied {object} on {date}."
+ * Lowercases the first letter of object for natural sentence flow.
+ */
+function formatSignificantNewInformation(event: OperationalEvent): string {
+  const actor = event.actor || "External party";
+  const rawObject = event.object || "document";
+  const object = rawObject.charAt(0).toLowerCase() + rawObject.slice(1);
+  const eventTimestamp = event.occurredAt ?? event.provenance.sourceRecordedAt;
+  const eventDate = new Date(eventTimestamp);
+  const formattedDate = eventDate.toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+  return `${actor} supplied ${object} on ${formattedDate}.`;
+}
+
+/**
+ * Derives the significant-new-information slot from operational events.
+ *
+ * "Significant new information" is defined as evidence or documents
+ * received from external parties (not the client, not our firm/attorney).
+ * This slot identifies the most recent substantive information received
+ * from opposing counsel, courts, third parties, or other external sources.
+ *
+ * Structured data first: the latest DOCUMENT_SENT event from an external
+ * party at or before asOf, identified via actor and email-from matching.
+ * An external party is anyone who is not the client and not our firm
+ * (responsible attorney, requesting user, or firm-domain staff).
+ *
+ * No text fallback is used: determining whether an event is from an external
+ * party requires structured actor or email-from data. Events that cannot be
+ * classified give UNKNOWN.
+ *
+ * asOf is explicit; an invalid asOf gives UNKNOWN. Only events at or before
+ * asOf are considered.
+ *
+ * Format: "{Actor} supplied {object} on {date}."
+ */
+export function deriveSignificantNewInformationSlot(
+  events: OperationalEvent[],
+  matterId: string,
+  matter: SyntheticMatter,
+  eligibleEvidence: EligibleEvidenceItem[],
+  requestingUser: SyntheticUser,
+  asOf: string
+): StatusClaim {
+  const asOfTime = parseAsOfTime(asOf);
+  if (asOfTime === null) {
+    return unknownSignificantNewInformation();
+  }
+
+  const documentEvents = events.filter(
+    (event) =>
+      event.matterId === matterId &&
+      event.eventType === "DOCUMENT_SENT" &&
+      getEventTimestamp(event) <= asOfTime
+  );
+
+  if (documentEvents.length === 0) {
+    return unknownSignificantNewInformation();
+  }
+
+  const externalDocumentEvents = documentEvents.filter((event) =>
+    isEventFromExternalParty(event, matter, requestingUser, eligibleEvidence)
+  );
+
+  if (externalDocumentEvents.length === 0) {
+    return unknownSignificantNewInformation();
+  }
+
+  const latest = getLatestEvent(externalDocumentEvents);
+  const evidenceId = latest.provenance.sourceArtifactId;
+
+  return significantNewInformationClaim(
+    formatSignificantNewInformation(latest),
+    "SUPPORTED",
+    evidenceId
+  );
+}
