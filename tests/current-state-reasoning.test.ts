@@ -1156,6 +1156,45 @@ test("current-status: re-opened active status after settled does not stay settle
   assert.notEqual(derived.value, "The matter is settled.");
 });
 
+test("current-status: later open waiting supersedes an earlier approval request", () => {
+  const matterId = "test-matter-status-later-waiting";
+  const derived = deriveCurrentStatusSlot(
+    [
+      ...approvalAwaitingEvents(matterId),
+      makeCurrentStatusEvent({
+        eventId: `${matterId}-waiting`,
+        matterId,
+        eventType: "WAITING_STATE_REPORTED",
+        occurredAt: "2026-09-19T15:20:00Z",
+        actor: "Rachel Morgan",
+        action:
+          "Reported that the matter team was waiting for the client's review of the discovery responses.",
+        object: "the client's review of the discovery responses",
+        provenance: {
+          sourceArtifactId: `${matterId}-artifact-waiting`,
+          sourceSystem: "Outlook",
+          sourceRecordedAt: "2026-09-19T15:20:00Z",
+          associationMethod: "EXPLICIT_MATTER_ID",
+          evidenceExcerpt: "waiting for the client's review",
+        },
+      }),
+    ],
+    matterId,
+    makeCurrentStatusMatter(matterId),
+    CURRENT_STATUS_AS_OF,
+  );
+  assert.equal(
+    derived.value,
+    "Waiting for the client's review of the discovery responses",
+  );
+  assert.equal(derived.state, "SUPPORTED");
+  assert.notEqual(
+    derived.value,
+    "Settlement revisions are awaiting client approval.",
+  );
+  assert.deepEqual(derived.evidenceIds, [`${matterId}-artifact-waiting`]);
+});
+
 test("current-status: settled after asOf does not supersede", () => {
   const matterId = "test-matter-status-settled-after-asof";
   const derived = deriveCurrentStatusSlot(

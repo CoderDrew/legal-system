@@ -796,11 +796,13 @@ export function deriveWaitingOnSlot(
  * Derives the current-status slot from operational events using supersession reasoning.
  *
  * A WAITING_STATE_REPORTED event is superseded by a later DOCUMENT_SENT,
- * APPROVAL_REQUESTED, or DOCUMENT_REVIEWED event. The latest
- * MATTER_STATUS_RECORDED at or before asOf supersedes an earlier open
- * approval or waiting state only when that latest status is settled or
- * closed; a later active status re-opens the matter. Only events at or
- * before asOf are considered. Invalid asOf is UNKNOWN.
+ * APPROVAL_REQUESTED, or DOCUMENT_REVIEWED event. A later open
+ * WAITING_STATE_REPORTED supersedes an earlier APPROVAL_REQUESTED for
+ * current-status. The latest MATTER_STATUS_RECORDED at or before asOf
+ * supersedes an earlier open approval or waiting state only when that
+ * latest status is settled or closed; a later active status re-opens
+ * the matter. Only events at or before asOf are considered. Invalid
+ * asOf is UNKNOWN.
  * Status sentences are composed from semantics.documentForm,
  * semantics.documentSubject, semantics.approvalKind, and
  * semantics.recordedStatus — never by parsing action or object text.
@@ -882,8 +884,32 @@ export function deriveCurrentStatusSlot(
   const approvalEvents = matterEvents.filter(
     (e) => e.eventType === "APPROVAL_REQUESTED",
   );
+  const latestOpenWaiting =
+    activeWaitingEvents.length > 0
+      ? activeWaitingEvents.reduce((latest, current) => {
+          const latestTime = new Date(latest.provenance.sourceRecordedAt).getTime();
+          const currentTime = new Date(current.provenance.sourceRecordedAt).getTime();
+          if (currentTime > latestTime) return current;
+          if (currentTime < latestTime) return latest;
+          return current.eventId > latest.eventId ? current : latest;
+        })
+      : null;
+  const latestApprovalEvent =
+    approvalEvents.length > 0
+      ? approvalEvents.reduce((latest, current) => {
+          const latestTime = new Date(latest.provenance.sourceRecordedAt).getTime();
+          const currentTime = new Date(current.provenance.sourceRecordedAt).getTime();
+          if (currentTime > latestTime) return current;
+          if (currentTime < latestTime) return latest;
+          return current.eventId > latest.eventId ? current : latest;
+        })
+      : null;
+  const preferLaterWaitingOverApproval =
+    latestOpenWaiting !== null &&
+    (latestApprovalEvent === null ||
+      isLaterBySourceRecordedAt(latestOpenWaiting, latestApprovalEvent));
 
-  if (approvalEvents.length > 0) {
+  if (approvalEvents.length > 0 && !preferLaterWaitingOverApproval) {
     const latestApproval = approvalEvents.reduce((latest, current) => {
       const latestTime = new Date(latest.provenance.sourceRecordedAt).getTime();
       const currentTime = new Date(current.provenance.sourceRecordedAt).getTime();
