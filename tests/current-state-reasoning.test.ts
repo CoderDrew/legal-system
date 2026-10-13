@@ -5380,6 +5380,65 @@ test("owner: exactly one assigned name is required", () => {
   assert.notEqual(derived.value, "Rachel Morgan");
 });
 
+test("owner: same-timestamp assignedPerson disagreement is CONFLICTING", () => {
+  const matterId = "test-matter-owner-conflict";
+  const derived = deriveOwnerSlot(
+    [
+      makeOwnerEvent({
+        eventId: `${matterId}-resp-a`,
+        matterId,
+        eventType: "RESPONSIBILITY_RECORDED",
+        occurredAt: "2026-09-16T12:00:00Z",
+        actor: null,
+        action: "Recorded Alex Thompson as the responsible attorney.",
+        object: "Responsible attorney",
+        semantics: {
+          assignedPerson: "Alex Thompson",
+        },
+        provenance: {
+          sourceArtifactId: `${matterId}-artifact-a`,
+          sourceSystem: "Clio",
+          sourceRecordedAt: "2026-09-16T12:00:00Z",
+          associationMethod: "AUTHORITATIVE_SOURCE_RELATIONSHIP",
+          evidenceExcerpt: "Alex Thompson",
+        },
+      }),
+      makeOwnerEvent({
+        eventId: `${matterId}-resp-b`,
+        matterId,
+        eventType: "RESPONSIBILITY_RECORDED",
+        occurredAt: "2026-09-16T12:00:00Z",
+        actor: null,
+        action: "Recorded Rachel Morgan as the responsible attorney.",
+        object: "Responsible attorney",
+        semantics: {
+          assignedPerson: "Rachel Morgan",
+        },
+        provenance: {
+          sourceArtifactId: `${matterId}-artifact-b`,
+          sourceSystem: "Outlook",
+          sourceRecordedAt: "2026-09-16T12:00:00Z",
+          associationMethod: "EXPLICIT_MATTER_ID",
+          evidenceExcerpt: "Rachel Morgan",
+        },
+      }),
+    ],
+    matterId,
+    makeOwnerMatter(matterId),
+    syntheticRequestingUser,
+    OWNER_AS_OF,
+  );
+
+  assert.equal(derived.state, "CONFLICTING");
+  assert.equal(derived.value, "Unknown");
+  assert.notEqual(derived.value, "Alex Thompson");
+  assert.notEqual(derived.value, "Rachel Morgan");
+  assert.deepEqual(derived.evidenceIds, [
+    `${matterId}-artifact-a`,
+    `${matterId}-artifact-b`,
+  ]);
+});
+
 // ============================================================================
 // IMPORTANT-DATE SLOT TESTS
 // ============================================================================

@@ -1222,15 +1222,37 @@ function ownerClaim(
   };
 }
 
+function conflictingOwner(evidenceIds: string[]): StatusClaim {
+  return {
+    id: "owner",
+    label: "Owner",
+    value: "Unknown",
+    state: "CONFLICTING",
+    evidenceIds: [...evidenceIds].sort(),
+  };
+}
+
+function assignedPersonKey(event: OperationalEvent): string {
+  const semantics = eventSemantics(event);
+  if (!Object.prototype.hasOwnProperty.call(semantics, "assignedPerson")) {
+    return "<omitted>";
+  }
+  if (!semantics.assignedPerson) {
+    return "<none>";
+  }
+  return semantics.assignedPerson.trim().toLowerCase();
+}
+
 /**
  * Derives the owner slot from operational events.
  *
  * Structured data only: the latest RESPONSIBILITY_RECORDED event at or
  * before asOf. semantics.assignedPerson is the current assignee when the
  * event records one; explicit null means no current assignee. When
- * assignedPerson is omitted, the slot is UNKNOWN. Actor, object, and
- * source-email are not used as the assignee. Action text is never
- * parsed. Invalid asOf is UNKNOWN.
+ * assignedPerson is omitted, the slot is UNKNOWN. Two latest-timestamp
+ * records that disagree on assignedPerson are CONFLICTING rather than a
+ * tie-broken name. Actor, object, and source-email are not used as the
+ * assignee. Action text is never parsed. Invalid asOf is UNKNOWN.
  */
 export function deriveOwnerSlot(
   events: OperationalEvent[],
@@ -1256,6 +1278,17 @@ export function deriveOwnerSlot(
   }
 
   const latest = getLatestEvent(responsibilityEvents);
+  const latestTime = getEventTimestamp(latest);
+  const latestGroup = responsibilityEvents.filter(
+    (event) => getEventTimestamp(event) === latestTime
+  );
+  const assignedKeys = new Set(latestGroup.map(assignedPersonKey));
+  if (assignedKeys.size > 1) {
+    return conflictingOwner(
+      latestGroup.map((event) => event.provenance.sourceArtifactId)
+    );
+  }
+
   const evidenceId = latest.provenance.sourceArtifactId;
   const semantics = eventSemantics(latest);
 
