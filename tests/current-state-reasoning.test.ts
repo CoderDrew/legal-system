@@ -3407,7 +3407,7 @@ test("next-action: matter isolation works correctly", () => {
     testMatter1,
     [],
     syntheticRequestingUser,
-    NEXT_ACTION_AS_OF,
+    "2026-09-30T23:59:59Z",
   );
 
   const derivedMatter2 = deriveNextActionSlot(
@@ -3416,7 +3416,7 @@ test("next-action: matter isolation works correctly", () => {
     testMatter2,
     [],
     syntheticRequestingUser,
-    NEXT_ACTION_AS_OF,
+    "2026-09-30T23:59:59Z",
   );
 
   // Each matter should only see its own events
