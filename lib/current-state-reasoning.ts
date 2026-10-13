@@ -1947,36 +1947,6 @@ function significantNewInformationClaim(
 }
 
 /**
- * Helper: Check if an event is from an external party (not client, not own side).
- * An external party is anyone who is not the client and not our firm/attorney.
- */
-function isEventFromExternalParty(
-  event: OperationalEvent,
-  matter: SyntheticMatter,
-  requestingUser: SyntheticUser,
-  eligibleEvidence: EligibleEvidenceItem[]
-): boolean {
-  if (
-    isClientActor(event.actor, matter) ||
-    isOwnSideActor(event.actor, matter, requestingUser)
-  ) {
-    return false;
-  }
-
-  const artifact = eligibleEvidence.find(
-    (item) => item.id === event.provenance.sourceArtifactId
-  );
-  if (
-    isEmailFromPerson(artifact, matter.client) ||
-    isEmailFromOwnSide(artifact, matter, requestingUser, eligibleEvidence)
-  ) {
-    return false;
-  }
-
-  return true;
-}
-
-/**
  * Helper: Format the significant new information value from a DOCUMENT_SENT event.
  * Template: "{Actor} supplied {object} on {date}."
  * Lowercases the first letter of object for natural sentence flow.
@@ -2042,9 +2012,52 @@ export function deriveSignificantNewInformationSlot(
     return unknownSignificantNewInformation();
   }
 
-  const externalDocumentEvents = documentEvents.filter((event) =>
-    isEventFromExternalParty(event, matter, requestingUser, eligibleEvidence)
+  // Compute firm domains once to avoid O(n²) complexity
+  const firmDomains = firmDomainsFromStructuredIdentity(
+    matter,
+    requestingUser,
+    eligibleEvidence
   );
+
+  // Create artifact lookup map to avoid O(n²) complexity
+  const artifactMap = new Map(
+    eligibleEvidence.map((item) => [item.id, item])
+  );
+
+  const externalDocumentEvents = documentEvents.filter((event) => {
+    // Check if event is from client or own side
+    if (
+      isClientActor(event.actor, matter) ||
+      isOwnSideActor(event.actor, matter, requestingUser)
+    ) {
+      return false;
+    }
+
+    const artifact = artifactMap.get(event.provenance.sourceArtifactId);
+
+    if (isEmailFromPerson(artifact, matter.client)) {
+      return false;
+    }
+
+    // Check if email is from own side using pre-computed firm domains
+    if (!artifact?.from) {
+      return true; // No email info, assume external
+    }
+
+    if (
+      isEmailFromPerson(artifact, matter.responsibleAttorney) ||
+      isEmailFromPerson(artifact, requestingUser.name)
+    ) {
+      return false;
+    }
+
+    const domain = artifact.from.toLowerCase().split("@")[1];
+    if (!domain) {
+      return true;
+    }
+
+    return !firmDomains.has(domain);
+  });
 
   if (externalDocumentEvents.length === 0) {
     return unknownSignificantNewInformation();
