@@ -2082,7 +2082,7 @@ export function deriveSignificantNewInformationSlot(
         return false;
       }
 
-      const domain = artifactFrom.toLowerCase().split("@")[1] ?? "";
+      const domain = artifactFrom!.toLowerCase().split("@")[1] ?? "";
       if (domain && firmDomains.has(domain)) {
         return false;
       }
@@ -2100,7 +2100,7 @@ export function deriveSignificantNewInformationSlot(
     // Email from external domain (we already excluded firm and client above)
     const externalArtifactFrom = artifact?.from;
     if (externalArtifactFrom) {
-      const domain = externalArtifactFrom.toLowerCase().split("@")[1] ?? "";
+      const domain = externalArtifactFrom!.toLowerCase().split("@")[1] ?? "";
       if (domain) {
         return true; // Has domain, not firm, not client = external
       }
