@@ -496,6 +496,46 @@ function isClosedOrSettledStatusEvent(event: OperationalEvent): boolean {
   return status === "settled" || status === "closed";
 }
 
+function isLaterBySourceRecordedAt(
+  candidate: OperationalEvent,
+  reference: OperationalEvent
+): boolean {
+  const candidateTime = new Date(candidate.provenance.sourceRecordedAt).getTime();
+  const referenceTime = new Date(reference.provenance.sourceRecordedAt).getTime();
+  return (
+    candidateTime > referenceTime ||
+    (candidateTime === referenceTime && candidate.eventId > reference.eventId)
+  );
+}
+
+function latestClosedOrSettledStatus(
+  events: OperationalEvent[]
+): OperationalEvent | null {
+  const closedOrSettled = events.filter(isClosedOrSettledStatusEvent);
+  if (closedOrSettled.length === 0) {
+    return null;
+  }
+  return closedOrSettled.reduce((latest, current) => {
+    const latestTime = new Date(latest.provenance.sourceRecordedAt).getTime();
+    const currentTime = new Date(current.provenance.sourceRecordedAt).getTime();
+    if (currentTime > latestTime) return current;
+    if (currentTime < latestTime) return latest;
+    return current.eventId > latest.eventId ? current : latest;
+  });
+}
+
+function currentStatusFromRecordedStatus(event: OperationalEvent): StatusClaim {
+  const status = eventSemantics(event).recordedStatus;
+  return {
+    id: "current-status",
+    label: "Current Status",
+    value:
+      status === "settled" ? "The matter is settled." : "The matter is closed.",
+    state: "SUPPORTED",
+    evidenceIds: [event.provenance.sourceArtifactId],
+  };
+}
+
 /**
  * Next-action staleness for approvals: later Settled/Closed status,
  * a later client document, or about six months of silence.
@@ -754,9 +794,12 @@ export function deriveWaitingOnSlot(
  * Derives the current-status slot from operational events using supersession reasoning.
  *
  * A WAITING_STATE_REPORTED event is superseded by a later DOCUMENT_SENT,
- * APPROVAL_REQUESTED, or DOCUMENT_REVIEWED event. Status sentences are
- * composed from semantics.documentForm, semantics.documentSubject, and
- * semantics.approvalKind — never by parsing action or object text.
+ * APPROVAL_REQUESTED, or DOCUMENT_REVIEWED event. A later
+ * MATTER_STATUS_RECORDED of settled or closed supersedes an open
+ * approval or waiting state; the recorded status is then current.
+ * Status sentences are composed from semantics.documentForm,
+ * semantics.documentSubject, semantics.approvalKind, and
+ * semantics.recordedStatus — never by parsing action or object text.
  * Object is used only as a display noun when documentForm is plain or
  * omitted.
  */
@@ -834,6 +877,14 @@ export function deriveCurrentStatusSlot(
       return current.eventId > latest.eventId ? current : latest;
     });
 
+    const laterClosedOrSettled = latestClosedOrSettledStatus(matterEvents);
+    if (
+      laterClosedOrSettled &&
+      isLaterBySourceRecordedAt(laterClosedOrSettled, latestApproval)
+    ) {
+      return currentStatusFromRecordedStatus(laterClosedOrSettled);
+    }
+
     const docEvents = matterEvents.filter((e) => e.eventType === "DOCUMENT_SENT");
     const approvalTime = new Date(latestApproval.provenance.sourceRecordedAt).getTime();
 
@@ -883,6 +934,14 @@ export function deriveCurrentStatusSlot(
       if (currentTime < latestTime) return latest;
       return current.eventId > latest.eventId ? current : latest;
     });
+
+    const laterClosedOrSettled = latestClosedOrSettledStatus(matterEvents);
+    if (
+      laterClosedOrSettled &&
+      isLaterBySourceRecordedAt(laterClosedOrSettled, latestWaiting)
+    ) {
+      return currentStatusFromRecordedStatus(laterClosedOrSettled);
+    }
 
     const waitingFor = latestWaiting.object || "action";
     return {
@@ -1131,24 +1190,6 @@ function matchFirmSideIdentity(
   return null;
 }
 
-function resolveOwnerFromArtifact(
-  artifact: EligibleEvidenceItem | undefined,
-  matter: SyntheticMatter,
-  requestingUser: SyntheticUser
-): string | null {
-  if (!artifact?.from) return null;
-  if (isEmailFromPerson(artifact, matter.client)) {
-    return null;
-  }
-  if (isEmailFromPerson(artifact, matter.responsibleAttorney)) {
-    return matter.responsibleAttorney;
-  }
-  if (isEmailFromPerson(artifact, requestingUser.name)) {
-    return requestingUser.name;
-  }
-  return null;
-}
-
 function ownerClaim(
   value: string,
   state: "SUPPORTED" | "INFERRED",
@@ -1169,9 +1210,9 @@ function ownerClaim(
  * Structured data only: the latest RESPONSIBILITY_RECORDED event at or
  * before asOf. semantics.assignedPerson is the current assignee when the
  * event records one; explicit null means no current assignee. When
- * assignedPerson is omitted, actor, then object, then source-email
- * local-part are matched against known firm-side identities. Action text
- * is never parsed. Invalid asOf is UNKNOWN.
+ * assignedPerson is omitted, the slot is UNKNOWN. Actor, object, and
+ * source-email are not used as the assignee. Action text is never
+ * parsed. Invalid asOf is UNKNOWN.
  */
 export function deriveOwnerSlot(
   events: OperationalEvent[],
@@ -1181,6 +1222,7 @@ export function deriveOwnerSlot(
   requestingUser: SyntheticUser,
   asOf: string
 ): StatusClaim {
+  void eligibleEvidence;
   const asOfTime = parseAsOfTime(asOf);
   if (asOfTime === null) {
     return unknownOwner();
@@ -1198,33 +1240,21 @@ export function deriveOwnerSlot(
   }
 
   const latest = getLatestEvent(responsibilityEvents);
-  const artifact = eligibleEvidence.find(
-    (item) => item.id === latest.provenance.sourceArtifactId
-  );
   const evidenceId = latest.provenance.sourceArtifactId;
   const semantics = eventSemantics(latest);
 
-  if (Object.prototype.hasOwnProperty.call(semantics, "assignedPerson")) {
-    const assigned = semantics.assignedPerson;
-    if (!assigned) {
-      return unknownOwner();
-    }
-    const matched = matchFirmSideIdentity(assigned, matter, requestingUser);
-    if (matched) {
-      return ownerClaim(matched, "SUPPORTED", evidenceId);
-    }
+  if (!Object.prototype.hasOwnProperty.call(semantics, "assignedPerson")) {
     return unknownOwner();
   }
 
-  const structuredOwner =
-    matchFirmSideIdentity(latest.actor, matter, requestingUser) ??
-    matchFirmSideIdentity(latest.object, matter, requestingUser) ??
-    resolveOwnerFromArtifact(artifact, matter, requestingUser);
-
-  if (structuredOwner) {
-    return ownerClaim(structuredOwner, "SUPPORTED", evidenceId);
+  const assigned = semantics.assignedPerson;
+  if (!assigned) {
+    return unknownOwner();
   }
-
+  const matched = matchFirmSideIdentity(assigned, matter, requestingUser);
+  if (matched) {
+    return ownerClaim(matched, "SUPPORTED", evidenceId);
+  }
   return unknownOwner();
 }
 
@@ -1288,9 +1318,10 @@ function calendarDateFromParts(
 }
 
 /**
- * Parse a complete calendar date from a structured field (semantics.scheduledDate
- * or object). ISO YYYY-MM-DD, long-form month names, and US MM/DD/YYYY are
- * accepted. This is field parsing of a date value, not narrative text inference.
+ * Parse a complete calendar date from semantics.scheduledDate.
+ * ISO YYYY-MM-DD, long-form month names, and US MM/DD/YYYY are accepted.
+ * This is field parsing of the structured date value, not object or
+ * action text inference.
  */
 function parseCompleteCalendarDate(text: string): CalendarDate | null {
   const trimmed = text.trim();
@@ -1381,14 +1412,14 @@ function importantDateClaim(
 
 function currentScheduleDate(event: OperationalEvent): CalendarDate | null {
   const semantics = eventSemantics(event);
-  if (Object.prototype.hasOwnProperty.call(semantics, "scheduledDate")) {
-    const scheduledDate = semantics.scheduledDate;
-    if (!scheduledDate) {
-      return null;
-    }
-    return parseCompleteCalendarDate(scheduledDate);
+  if (!Object.prototype.hasOwnProperty.call(semantics, "scheduledDate")) {
+    return null;
   }
-  return parseCompleteCalendarDate(event.object ?? "");
+  const scheduledDate = semantics.scheduledDate;
+  if (!scheduledDate) {
+    return null;
+  }
+  return parseCompleteCalendarDate(scheduledDate);
 }
 
 /**
@@ -1397,8 +1428,8 @@ function currentScheduleDate(event: OperationalEvent): CalendarDate | null {
  * Structured data only: the latest SCHEDULE_STATUS_REPORTED event at or
  * before asOf. semantics.scheduledDate is the current date when present;
  * explicit null means no current date (cancelled, TBD, relative phrasing).
- * When scheduledDate is omitted, `object` is used only if it itself is a
- * complete calendar date. Action text is never parsed. A date whose UTC
+ * When scheduledDate is omitted, the slot is UNKNOWN. `object` is not
+ * parsed as a date. Action text is never parsed. A date whose UTC
  * calendar day is before asOf is no longer current. Invalid asOf is UNKNOWN.
  */
 export function deriveImportantDateSlot(

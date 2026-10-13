@@ -236,7 +236,7 @@ One Evidence Item may produce multiple events, and multiple Evidence Items may s
 
 An Operational Event represents what eligible evidence establishes happened or was recorded. It does **not** represent MatterMind's conclusion about what is currently true. Historical events remain valid even when later events eventually supersede their operational significance. Supersession and current-state determination operate on events in a later reasoning stage; they are not part of event extraction.
 
-The synthetic vertical slice implements a deliberately small event contract containing a deterministic identity, matter identity, event type, nullable occurrence time and actor, display action and object, typed `semantics` for current-state facts, extraction method, and source provenance. Unknown occurrence times and actors remain null rather than being inferred. Reasoners read `semantics`; they do not parse `action` or `object` for meaning.
+The synthetic vertical slice implements a deliberately small event contract containing a deterministic identity, matter identity, event type, nullable occurrence time and actor, display action and object, typed `semantics` for current-state facts, extraction method, and source provenance. Unknown occurrence times and actors remain null rather than being inferred. Reasoners read `semantics`; they do not parse `action` or `object` for meaning. Omitted `assignedPerson` or `scheduledDate` is UNKNOWN; `object` is not parsed as a date and actor/object/email are not used as the assignee.
 
 The event contract deliberately separates two timestamps:
 
@@ -380,7 +380,7 @@ The current ground-truth case contains six eligible artifacts and seven extracte
 - The client-approval email produces two events.
 - Unknown event times and actors remain null.
 
-**Current checkpoint:** All 7 Matter Status Brief slots (current-status, last-important-event, waiting-on, next-action, owner, important-date, and significant-information) are derived from structured operational events. Reasoners read typed event semantics rather than parsing human-readable action or object text. Current-state ground truth for Smith v. Acme (matter-2026-0142) still matches exactly, including the superseded waiting-on-opposing-counsel event. SUPPORTED claims require a structured fact; invalid `asOf` is UNKNOWN; a missing fact is conservative UNKNOWN.
+**Current checkpoint:** All 7 Matter Status Brief slots (current-status, last-important-event, waiting-on, next-action, owner, important-date, and significant-information) are derived from structured operational events. Reasoners read typed event semantics rather than parsing human-readable action or object text. `object` is not parsed as a date; omitted `assignedPerson` or `scheduledDate` is UNKNOWN. Current-state ground truth for Smith v. Acme (matter-2026-0142) still matches exactly, including the superseded waiting-on-opposing-counsel event. SUPPORTED claims require a structured fact; invalid `asOf` is UNKNOWN; a missing fact is conservative UNKNOWN.
 
 ### Capabilities not implemented in the current vertical slice
 

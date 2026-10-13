@@ -129,8 +129,8 @@ export type RecordedMatterStatus = "active" | "settled" | "closed";
  * Typed facts consumed by current-state reasoners.
  *
  * Human-readable `action` and `object` are display fields and must not be
- * parsed for meaning. A missing fact yields UNKNOWN (or the slot's
- * structured fallback), never a text-inference path.
+ * parsed for meaning. A missing fact yields UNKNOWN, never a
+ * text-inference path or an omitted-field fallback.
  *
  * Each field is used only by the event types named in its comment.
  */
@@ -160,15 +160,15 @@ export type OperationalEventSemantics = {
   /**
    * RESPONSIBILITY_RECORDED: current assignee when the event records one.
    * Explicit null means no current assignee (departure, unassigned,
-   * reversal). Omitted means fall back to actor / object / source-email
-   * identity matching.
+   * reversal). Omitted means UNKNOWN. Actor, object, and source-email
+   * are not the assignee.
    */
   assignedPerson?: string | null;
   /**
    * SCHEDULE_STATUS_REPORTED: current calendar date as YYYY-MM-DD.
    * Explicit null means the report has no current date (cancelled, TBD,
-   * relative phrasing). Omitted means use `object` when `object` itself
-   * is a complete calendar date.
+   * relative phrasing). Omitted means UNKNOWN. `object` is not parsed
+   * as a date.
    */
   scheduledDate?: string | null;
 };

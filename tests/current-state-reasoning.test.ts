@@ -875,6 +875,92 @@ test("timestamp tie-breaker: uses eventId lexicographically", () => {
   assert.equal(derived.evidenceIds[0], "test-artifact-11");
 });
 
+test("current-status: later settled recorded status supersedes awaiting client approval", () => {
+  const matterId = "test-matter-status-settled-after-approval";
+  const testMatter = {
+    id: matterId,
+    matterNumber: "2026-TEST-SETTLED",
+    name: "Settled After Approval",
+    client: "Jordan Smith",
+    responsibleAttorney: "Alex Thompson",
+    status: "Active" as const,
+    participantIds: [],
+  };
+  const syntheticEvents: OperationalEvent[] = [
+    {
+      eventId: `${matterId}-doc`,
+      matterId,
+      eventType: "DOCUMENT_SENT",
+      occurredAt: "2026-09-16T10:00:00Z",
+      actor: "Opposing counsel",
+      action: "Sent revised settlement language.",
+      object: "Revised settlement language",
+      semantics: {
+        documentForm: "revised",
+        documentSubject: "settlement",
+      },
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: `${matterId}-artifact-doc`,
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-16T10:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "revised settlement language",
+      },
+    },
+    {
+      eventId: `${matterId}-approval`,
+      matterId,
+      eventType: "APPROVAL_REQUESTED",
+      occurredAt: "2026-09-17T12:00:00Z",
+      actor: "Alex Thompson",
+      action: "Requested client approval before responding.",
+      object: "Revised settlement language",
+      semantics: {
+        approvalKind: "client_approval",
+      },
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: `${matterId}-artifact-approval`,
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-17T12:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "approval before responding",
+      },
+    },
+    {
+      eventId: `${matterId}-settled`,
+      matterId,
+      eventType: "MATTER_STATUS_RECORDED",
+      occurredAt: "2026-09-20T09:00:00Z",
+      actor: null,
+      action: "Recorded the matter status as Settled.",
+      object: "Matter status",
+      semantics: {
+        recordedStatus: "settled",
+      },
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: `${matterId}-artifact-settled`,
+        sourceSystem: "Clio",
+        sourceRecordedAt: "2026-09-20T09:00:00Z",
+        associationMethod: "AUTHORITATIVE_SOURCE_RELATIONSHIP",
+        evidenceExcerpt: "Matter status: Settled",
+      },
+    },
+  ];
+
+  const derived = deriveCurrentStatusSlot(syntheticEvents, matterId, testMatter);
+  assert.equal(derived.state, "SUPPORTED");
+  assert.equal(derived.value, "The matter is settled.");
+  assert.equal(
+    derived.value.includes("awaiting client approval"),
+    false,
+    "A later settled status must not leave the brief awaiting client approval",
+  );
+  assert.deepEqual(derived.evidenceIds, [`${matterId}-artifact-settled`]);
+});
+
 // Tests for last-important-event slot derivation
 test("derived last-important-event slot matches ground-truth expectation", () => {
   const derived = deriveLastImportantEventSlot(
@@ -4178,6 +4264,9 @@ test("owner: structured actor name is SUPPORTED", () => {
         actor: "Alex Thompson",
         action: "Assigned coverage for the file.",
         object: null,
+        semantics: {
+          assignedPerson: "Alex Thompson",
+        },
         provenance: {
           sourceArtifactId: `${matterId}-artifact-resp`,
           sourceSystem: "Clio",
@@ -4343,6 +4432,9 @@ test("owner: structured data wins over a different name in action text", () => {
         actor: "Priya Nair",
         action: "Noted that Rachel Morgan will help with coverage.",
         object: null,
+        semantics: {
+          assignedPerson: "Priya Nair",
+        },
         provenance: {
           sourceArtifactId: `${matterId}-artifact-resp`,
           sourceSystem: "Clio",
@@ -4375,6 +4467,9 @@ test("owner: later responsibility event supersedes an earlier one", () => {
         actor: "Alex Thompson",
         action: "Opened the file.",
         object: null,
+        semantics: {
+          assignedPerson: "Alex Thompson",
+        },
         provenance: {
           sourceArtifactId: `${matterId}-artifact-earlier`,
           sourceSystem: "Clio",
@@ -4391,6 +4486,9 @@ test("owner: later responsibility event supersedes an earlier one", () => {
         actor: "Priya Nair",
         action: "Took over coverage.",
         object: null,
+        semantics: {
+          assignedPerson: "Priya Nair",
+        },
         provenance: {
           sourceArtifactId: `${matterId}-artifact-later`,
           sourceSystem: "Clio",
@@ -4424,6 +4522,9 @@ test("owner: events after asOf are ignored", () => {
         actor: "Rachel Morgan",
         action: "Opened the file.",
         object: null,
+        semantics: {
+          assignedPerson: "Rachel Morgan",
+        },
         provenance: {
           sourceArtifactId: `${matterId}-artifact-before`,
           sourceSystem: "Clio",
@@ -4440,6 +4541,9 @@ test("owner: events after asOf are ignored", () => {
         actor: "Priya Nair",
         action: "Took over coverage.",
         object: null,
+        semantics: {
+          assignedPerson: "Priya Nair",
+        },
         provenance: {
           sourceArtifactId: `${matterId}-artifact-after`,
           sourceSystem: "Clio",
@@ -4580,7 +4684,7 @@ test("owner: mutation removing responsibility events breaks the ground-truth mat
   assert.equal(derived.state, "UNKNOWN");
 });
 
-test("owner: email from a known own-side person is structured SUPPORTED", () => {
+test("owner: email from a known own-side person without assignedPerson is UNKNOWN", () => {
   const matterId = "test-matter-owner-email";
   const artifactId = `${matterId}-artifact-resp`;
   const testEvidence: EligibleEvidenceItem[] = [
@@ -4617,8 +4721,119 @@ test("owner: email from a known own-side person is structured SUPPORTED", () => 
     OWNER_AS_OF,
   );
 
-  assert.equal(derived.state, "SUPPORTED");
-  assert.equal(derived.value, "Priya Nair");
+  assert.equal(derived.state, "UNKNOWN");
+  assert.equal(derived.value, "Unknown");
+  assert.notEqual(derived.value, "Priya Nair");
+});
+
+test("owner: omitted assignedPerson with actor Rachel transferring to Alex is UNKNOWN", () => {
+  const matterId = "test-matter-owner-omitted-rachel-transfer";
+  const derived = deriveOwnerSlot(
+    [
+      makeOwnerEvent({
+        eventId: `${matterId}-resp`,
+        matterId,
+        eventType: "RESPONSIBILITY_RECORDED",
+        occurredAt: "2026-09-12T09:00:00Z",
+        actor: "Rachel Morgan",
+        action: "Transferred to Alex Thompson",
+        object: null,
+        provenance: {
+          sourceArtifactId: `${matterId}-artifact-resp`,
+          sourceSystem: "Clio",
+          sourceRecordedAt: "2026-09-12T09:00:00Z",
+          associationMethod: "AUTHORITATIVE_SOURCE_RELATIONSHIP",
+          evidenceExcerpt: "transferred",
+        },
+      }),
+    ],
+    matterId,
+    makeOwnerMatter(matterId),
+    [],
+    syntheticRequestingUser,
+    OWNER_AS_OF,
+  );
+
+  assert.equal(derived.state, "UNKNOWN");
+  assert.equal(derived.value, "Unknown");
+  assert.notEqual(derived.value, "Rachel Morgan");
+  assert.notEqual(derived.value, "Alex Thompson");
+});
+
+test("owner: omitted assignedPerson with actor Alex withdrawing is UNKNOWN", () => {
+  const matterId = "test-matter-owner-omitted-alex-withdrew";
+  const derived = deriveOwnerSlot(
+    [
+      makeOwnerEvent({
+        eventId: `${matterId}-resp`,
+        matterId,
+        eventType: "RESPONSIBILITY_RECORDED",
+        occurredAt: "2026-09-12T09:00:00Z",
+        actor: "Alex Thompson",
+        action: "Withdrew from the matter",
+        object: null,
+        provenance: {
+          sourceArtifactId: `${matterId}-artifact-resp`,
+          sourceSystem: "Clio",
+          sourceRecordedAt: "2026-09-12T09:00:00Z",
+          associationMethod: "AUTHORITATIVE_SOURCE_RELATIONSHIP",
+          evidenceExcerpt: "withdrew",
+        },
+      }),
+    ],
+    matterId,
+    makeOwnerMatter(matterId),
+    [],
+    syntheticRequestingUser,
+    OWNER_AS_OF,
+  );
+
+  assert.equal(derived.state, "UNKNOWN");
+  assert.equal(derived.value, "Unknown");
+  assert.notEqual(derived.value, "Alex Thompson");
+});
+
+test("owner: omitted assignedPerson with email from Rachel saying Alex took over is UNKNOWN", () => {
+  const matterId = "test-matter-owner-omitted-rachel-email";
+  const artifactId = `${matterId}-artifact-resp`;
+  const testEvidence: EligibleEvidenceItem[] = [
+    makeEmailEvidence({
+      id: artifactId,
+      from: "rachel.morgan@lawfirm.example",
+      to: ["jordan.smith@example.com"],
+      timestamp: "2026-09-12T09:00:00Z",
+    }),
+  ];
+  const derived = deriveOwnerSlot(
+    [
+      makeOwnerEvent({
+        eventId: `${matterId}-resp`,
+        matterId,
+        eventType: "RESPONSIBILITY_RECORDED",
+        occurredAt: "2026-09-12T09:00:00Z",
+        actor: null,
+        action: "Alex took over",
+        object: null,
+        provenance: {
+          sourceArtifactId: artifactId,
+          sourceSystem: "Outlook",
+          sourceRecordedAt: "2026-09-12T09:00:00Z",
+          associationMethod: "EXPLICIT_MATTER_ID",
+          evidenceExcerpt: "took over",
+        },
+      }),
+    ],
+    matterId,
+    makeOwnerMatter(matterId),
+    testEvidence,
+    syntheticRequestingUser,
+    OWNER_AS_OF,
+  );
+
+  assert.equal(derived.state, "UNKNOWN");
+  assert.equal(derived.value, "Unknown");
+  assert.notEqual(derived.value, "Rachel Morgan");
+  assert.notEqual(derived.value, "Alex Thompson");
 });
 
 test("owner: role label does not stand in for a person named only in the event", () => {
@@ -5062,6 +5277,7 @@ test("important-date: adding an explicit structured date changes the fixture res
         sourceRecordedAt: "2026-09-17T12:00:00Z",
         action: "Recorded the hearing date on the matter calendar.",
         object: "2026-10-15",
+        scheduledDate: "2026-10-15",
         artifactId: "email-0142-explicit-date",
       }),
     ],
@@ -5104,7 +5320,7 @@ test("important-date: no schedule events returns UNKNOWN", () => {
   assert.equal(derived.evidenceIds.length, 0);
 });
 
-test("important-date: structured object date is SUPPORTED", () => {
+test("important-date: omitted scheduledDate does not treat object as a date", () => {
   const matterId = "test-matter-date-structured";
   const derived = deriveImportantDateSlot(
     [
@@ -5121,9 +5337,31 @@ test("important-date: structured object date is SUPPORTED", () => {
     IMPORTANT_DATE_AS_OF,
   );
 
-  assert.equal(derived.state, "SUPPORTED");
-  assert.equal(derived.value, "October 15, 2026");
-  assert.deepEqual(derived.evidenceIds, [`${matterId}-artifact-schedule`]);
+  assert.equal(derived.state, "UNKNOWN");
+  assert.equal(derived.value, "Unknown");
+  assert.notEqual(derived.value, "October 15, 2026");
+});
+
+test("important-date: object date with cancelled action and no scheduledDate is UNKNOWN", () => {
+  const matterId = "test-matter-date-object-cancelled";
+  const derived = deriveImportantDateSlot(
+    [
+      scheduleStatusEvent({
+        matterId,
+        eventId: `${matterId}-schedule`,
+        occurredAt: "2026-09-12T09:00:00Z",
+        sourceRecordedAt: "2026-09-12T09:00:00Z",
+        action: "Hearing 2026-10-15 cancelled.",
+        object: "2026-10-15",
+      }),
+    ],
+    matterId,
+    IMPORTANT_DATE_AS_OF,
+  );
+
+  assert.equal(derived.state, "UNKNOWN");
+  assert.equal(derived.value, "Unknown");
+  assert.notEqual(derived.value, "October 15, 2026");
 });
 
 test("important-date: scheduledDate on a narrative schedule report is SUPPORTED", () => {
@@ -5215,6 +5453,7 @@ test("important-date: date before asOf is no longer current", () => {
         sourceRecordedAt: "2026-08-01T09:00:00Z",
         action: "Recorded the response date.",
         object: "2026-09-10",
+        scheduledDate: "2026-09-10",
       }),
     ],
     matterId,
@@ -5237,6 +5476,7 @@ test("important-date: date on asOf day remains current", () => {
         sourceRecordedAt: "2026-09-10T09:00:00Z",
         action: "Recorded the filing date.",
         object: "2026-09-17",
+        scheduledDate: "2026-09-17",
       }),
     ],
     matterId,
@@ -5258,6 +5498,7 @@ test("important-date: later schedule event supersedes an earlier date", () => {
         sourceRecordedAt: "2026-08-01T09:00:00Z",
         action: "Recorded the original hearing date.",
         object: "2026-10-01",
+        scheduledDate: "2026-10-01",
         artifactId: `${matterId}-artifact-earlier`,
       }),
       scheduleStatusEvent({
@@ -5267,6 +5508,7 @@ test("important-date: later schedule event supersedes an earlier date", () => {
         sourceRecordedAt: "2026-09-10T09:00:00Z",
         action: "Recorded the continued hearing date.",
         object: "2026-10-15",
+        scheduledDate: "2026-10-15",
         artifactId: `${matterId}-artifact-later`,
       }),
     ],
@@ -5335,6 +5577,7 @@ test("important-date: later relative phrasing supersedes an earlier explicit dat
         sourceRecordedAt: "2026-08-01T09:00:00Z",
         action: "Recorded the hearing date.",
         object: "2026-10-01",
+        scheduledDate: "2026-10-01",
         artifactId: `${matterId}-artifact-earlier`,
       }),
       scheduleStatusEvent({
@@ -5344,6 +5587,7 @@ test("important-date: later relative phrasing supersedes an earlier explicit dat
         sourceRecordedAt: "2026-09-10T09:00:00Z",
         action: "Reported that the hearing was moved to next month.",
         object: "Hearing",
+        scheduledDate: null,
         artifactId: `${matterId}-artifact-later`,
       }),
     ],
@@ -5367,6 +5611,7 @@ test("important-date: events after asOf are ignored", () => {
         sourceRecordedAt: "2026-09-10T09:00:00Z",
         action: "Recorded the hearing date.",
         object: "2026-10-01",
+        scheduledDate: "2026-10-01",
         artifactId: `${matterId}-artifact-before`,
       }),
       scheduleStatusEvent({
@@ -5376,6 +5621,7 @@ test("important-date: events after asOf are ignored", () => {
         sourceRecordedAt: "2026-09-20T09:00:00Z",
         action: "Recorded the continued hearing date.",
         object: "2026-11-01",
+        scheduledDate: "2026-11-01",
         artifactId: `${matterId}-artifact-after`,
       }),
     ],
@@ -5445,6 +5691,7 @@ test("important-date: structured date wins over a different date in action text"
         sourceRecordedAt: "2026-09-12T09:00:00Z",
         action: "Noted an old target of October 1, 2026.",
         object: "2026-10-15",
+        scheduledDate: "2026-10-15",
       }),
     ],
     matterId,
@@ -5593,6 +5840,7 @@ test("important-date: invalid calendar date 2027-02-30 is UNKNOWN", () => {
         sourceRecordedAt: "2026-09-12T09:00:00Z",
         action: "Recorded the hearing date.",
         object: "2027-02-30",
+        scheduledDate: "2027-02-30",
         artifactId: `${matterId}-artifact-structured`,
       }),
     ],
