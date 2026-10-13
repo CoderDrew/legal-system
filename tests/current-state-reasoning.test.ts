@@ -32,11 +32,14 @@ const extractedEvents = extractOperationalEvents({
   matterId: syntheticMatters[0].id,
 });
 
+const CURRENT_STATUS_AS_OF = "2026-12-31T23:59:59Z";
+
 test("derived current-status slot matches ground-truth expectation", () => {
   const derived = deriveCurrentStatusSlot(
     extractedEvents,
     syntheticMatters[0].id,
     syntheticMatters[0],
+    syntheticCurrentStateGroundTruth.asOf,
   );
   const expectation = syntheticCurrentStateGroundTruth.expectations.find(
     (exp) => exp.slotId === "current-status",
@@ -131,6 +134,7 @@ test("mutation: removing document-sent event breaks derivation", () => {
     eventsWithoutDocSent,
     syntheticMatters[0].id,
     syntheticMatters[0],
+    syntheticCurrentStateGroundTruth.asOf,
   );
 
   // Without the document-sent event, the derived status should differ
@@ -156,6 +160,7 @@ test("mutation: removing approval-requested event breaks derivation", () => {
     eventsWithoutApproval,
     syntheticMatters[0].id,
     syntheticMatters[0],
+    syntheticCurrentStateGroundTruth.asOf,
   );
 
   const expectation = syntheticCurrentStateGroundTruth.expectations.find(
@@ -173,6 +178,7 @@ test("derived slot uses only non-superseded events as evidence", () => {
     extractedEvents,
     syntheticMatters[0].id,
     syntheticMatters[0],
+    syntheticCurrentStateGroundTruth.asOf,
   );
 
   const expectation = syntheticCurrentStateGroundTruth.expectations.find(
@@ -211,11 +217,13 @@ test("derivation is deterministic across multiple calls", () => {
     extractedEvents,
     syntheticMatters[0].id,
     syntheticMatters[0],
+    syntheticCurrentStateGroundTruth.asOf,
   );
   const derived2 = deriveCurrentStatusSlot(
     extractedEvents,
     syntheticMatters[0].id,
     syntheticMatters[0],
+    syntheticCurrentStateGroundTruth.asOf,
   );
 
   assert.deepEqual(
@@ -231,6 +239,7 @@ test("derivation uses only events from the specified matter", () => {
     extractedEvents,
     syntheticMatters[0].id,
     syntheticMatters[0],
+    syntheticCurrentStateGroundTruth.asOf,
   );
 
   // All evidence IDs should map to events belonging to the selected matter
@@ -312,6 +321,7 @@ test("non-fixture matter: contract draft awaiting attorney review", () => {
     syntheticEvents,
     "test-matter-001",
     testMatter,
+    CURRENT_STATUS_AS_OF,
   );
 
   assert.equal(derived.state, "SUPPORTED");
@@ -378,6 +388,7 @@ test("non-fixture matter: proposed agreement from client", () => {
     syntheticEvents,
     "test-matter-002",
     testMatter,
+    CURRENT_STATUS_AS_OF,
   );
 
   assert.equal(derived.state, "SUPPORTED");
@@ -454,6 +465,7 @@ test("non-fixture matter: waiting superseded by later action", () => {
     syntheticEvents,
     "test-matter-003",
     testMatter,
+    CURRENT_STATUS_AS_OF,
   );
 
   // The waiting state should be superseded; status should reflect the later events
@@ -518,6 +530,7 @@ test("event ordering: latest by timestamp, not array position", () => {
     syntheticEvents,
     "test-matter-004",
     testMatter,
+    CURRENT_STATUS_AS_OF,
   );
 
   // Should use the chronologically later event, not the last in array
@@ -599,6 +612,7 @@ test("supersession comparison: earlier event must be superseded by later event",
     syntheticEvents,
     "test-matter-supersession",
     testMatter,
+    CURRENT_STATUS_AS_OF,
   );
 
   // The status should be based on the later events (doc + approval), not the waiting event
@@ -667,6 +681,7 @@ test("supersession: waiting event superseded by document-sent (no approval)", ()
     syntheticEvents,
     "test-m-flip",
     testMatter,
+    CURRENT_STATUS_AS_OF,
   );
 
   // With correct comparison (>): waiting is superseded, status describes the document event
@@ -735,6 +750,7 @@ test("non-client possessive approval: Judge Lee's approval != client approval", 
     syntheticEvents,
     "test-matter-judge",
     testMatter,
+    CURRENT_STATUS_AS_OF,
   );
 
   assert.equal(
@@ -803,6 +819,7 @@ test("current-status: object text keeps original proper-noun casing", () => {
     syntheticEvents,
     "test-matter-status-casing",
     testMatter,
+    CURRENT_STATUS_AS_OF,
   );
 
   assert.match(
@@ -868,6 +885,7 @@ test("timestamp tie-breaker: uses eventId lexicographically", () => {
     syntheticEvents,
     "test-matter-005",
     testMatter,
+    CURRENT_STATUS_AS_OF,
   );
 
   // With identical timestamps, should use the event with higher eventId (zzz > aaa)
@@ -950,7 +968,7 @@ test("current-status: later settled recorded status supersedes awaiting client a
     },
   ];
 
-  const derived = deriveCurrentStatusSlot(syntheticEvents, matterId, testMatter);
+  const derived = deriveCurrentStatusSlot(syntheticEvents, matterId, testMatter, CURRENT_STATUS_AS_OF);
   assert.equal(derived.state, "SUPPORTED");
   assert.equal(derived.value, "The matter is settled.");
   assert.equal(
@@ -959,6 +977,241 @@ test("current-status: later settled recorded status supersedes awaiting client a
     "A later settled status must not leave the brief awaiting client approval",
   );
   assert.deepEqual(derived.evidenceIds, [`${matterId}-artifact-settled`]);
+});
+
+function makeCurrentStatusMatter(id: string): SyntheticMatter {
+  return {
+    id,
+    matterNumber: id,
+    name: "Current Status Test",
+    client: "Jordan Smith",
+    responsibleAttorney: "Alex Thompson",
+    status: "Active",
+    participantIds: [],
+  };
+}
+
+function makeCurrentStatusEvent(
+  event: Omit<OperationalEvent, "extractionMethod">,
+): OperationalEvent {
+  return {
+    ...event,
+    extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+  };
+}
+
+function approvalAwaitingEvents(matterId: string): OperationalEvent[] {
+  return [
+    makeCurrentStatusEvent({
+      eventId: `${matterId}-doc`,
+      matterId,
+      eventType: "DOCUMENT_SENT",
+      occurredAt: "2026-09-16T10:00:00Z",
+      actor: "Opposing counsel",
+      action: "Sent revised settlement language.",
+      object: "Revised settlement language",
+      semantics: {
+        documentForm: "revised",
+        documentSubject: "settlement",
+      },
+      provenance: {
+        sourceArtifactId: `${matterId}-artifact-doc`,
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-16T10:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "revised settlement language",
+      },
+    }),
+    makeCurrentStatusEvent({
+      eventId: `${matterId}-approval`,
+      matterId,
+      eventType: "APPROVAL_REQUESTED",
+      occurredAt: "2026-09-17T17:45:00Z",
+      actor: "Alex Thompson",
+      action: "Requested client approval before responding.",
+      object: "Revised settlement language",
+      semantics: {
+        approvalKind: "client_approval",
+      },
+      provenance: {
+        sourceArtifactId: `${matterId}-artifact-approval`,
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-17T17:45:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "approval before responding",
+      },
+    }),
+  ];
+}
+
+function recordedStatusEvent(
+  matterId: string,
+  status: "active" | "settled" | "closed",
+  occurredAt: string,
+  eventId = `${matterId}-${status}`,
+): OperationalEvent {
+  const label = status.charAt(0).toUpperCase() + status.slice(1);
+  return makeCurrentStatusEvent({
+    eventId,
+    matterId,
+    eventType: "MATTER_STATUS_RECORDED",
+    occurredAt,
+    actor: null,
+    action: `Recorded the matter status as ${label}.`,
+    object: "Matter status",
+    semantics: {
+      recordedStatus: status,
+    },
+    provenance: {
+      sourceArtifactId: `${matterId}-artifact-${status}`,
+      sourceSystem: "Clio",
+      sourceRecordedAt: occurredAt,
+      associationMethod: "AUTHORITATIVE_SOURCE_RELATIONSHIP",
+      evidenceExcerpt: `Matter status: ${label}`,
+    },
+  });
+}
+
+test("current-status: settled before the approval request does not supersede", () => {
+  const matterId = "test-matter-status-settled-before";
+  const derived = deriveCurrentStatusSlot(
+    [
+      recordedStatusEvent(matterId, "settled", "2026-09-16T09:00:00Z"),
+      ...approvalAwaitingEvents(matterId),
+    ],
+    matterId,
+    makeCurrentStatusMatter(matterId),
+    CURRENT_STATUS_AS_OF,
+  );
+  assert.equal(derived.value, "Settlement revisions are awaiting client approval.");
+  assert.notEqual(derived.value, "The matter is settled.");
+});
+
+test("current-status: later closed recorded status supersedes awaiting client approval", () => {
+  const matterId = "test-matter-status-closed-after";
+  const derived = deriveCurrentStatusSlot(
+    [
+      ...approvalAwaitingEvents(matterId),
+      recordedStatusEvent(matterId, "closed", "2026-09-20T09:00:00Z"),
+    ],
+    matterId,
+    makeCurrentStatusMatter(matterId),
+    CURRENT_STATUS_AS_OF,
+  );
+  assert.equal(derived.state, "SUPPORTED");
+  assert.equal(derived.value, "The matter is closed.");
+  assert.notEqual(derived.value, "The matter is settled.");
+  assert.deepEqual(derived.evidenceIds, [`${matterId}-artifact-closed`]);
+});
+
+test("current-status: waiting-on followed by settled uses the recorded status", () => {
+  const matterId = "test-matter-status-waiting-then-settled";
+  const derived = deriveCurrentStatusSlot(
+    [
+      makeCurrentStatusEvent({
+        eventId: `${matterId}-waiting`,
+        matterId,
+        eventType: "WAITING_STATE_REPORTED",
+        occurredAt: "2026-09-12T16:15:00Z",
+        actor: "Rachel Morgan",
+        action: "Reported waiting for opposing counsel.",
+        object: "Revised settlement language",
+        provenance: {
+          sourceArtifactId: `${matterId}-artifact-waiting`,
+          sourceSystem: "Outlook",
+          sourceRecordedAt: "2026-09-12T16:15:00Z",
+          associationMethod: "EXPLICIT_MATTER_ID",
+          evidenceExcerpt: "waiting for opposing counsel",
+        },
+      }),
+      recordedStatusEvent(matterId, "settled", "2026-09-20T09:00:00Z"),
+    ],
+    matterId,
+    makeCurrentStatusMatter(matterId),
+    CURRENT_STATUS_AS_OF,
+  );
+  assert.equal(derived.state, "SUPPORTED");
+  assert.equal(derived.value, "The matter is settled.");
+  assert.equal(
+    derived.value.includes("Waiting for"),
+    false,
+    "A later settled status must supersede an open waiting state",
+  );
+  assert.deepEqual(derived.evidenceIds, [`${matterId}-artifact-settled`]);
+});
+
+test("current-status: re-opened active status after settled does not stay settled", () => {
+  const matterId = "test-matter-status-reopened";
+  const derived = deriveCurrentStatusSlot(
+    [
+      ...approvalAwaitingEvents(matterId),
+      recordedStatusEvent(matterId, "settled", "2026-09-17T19:00:00Z"),
+      recordedStatusEvent(matterId, "active", "2026-09-17T20:00:00Z"),
+    ],
+    matterId,
+    makeCurrentStatusMatter(matterId),
+    CURRENT_STATUS_AS_OF,
+  );
+  assert.equal(derived.value, "Settlement revisions are awaiting client approval.");
+  assert.notEqual(derived.value, "The matter is settled.");
+});
+
+test("current-status: settled after asOf does not supersede", () => {
+  const matterId = "test-matter-status-settled-after-asof";
+  const derived = deriveCurrentStatusSlot(
+    [
+      ...approvalAwaitingEvents(matterId),
+      recordedStatusEvent(matterId, "settled", "2026-09-20T09:00:00Z"),
+    ],
+    matterId,
+    makeCurrentStatusMatter(matterId),
+    "2026-09-17T23:59:59Z",
+  );
+  assert.equal(derived.value, "Settlement revisions are awaiting client approval.");
+  assert.notEqual(derived.value, "The matter is settled.");
+});
+
+test("current-status: invalid asOf is UNKNOWN", () => {
+  const matterId = "test-matter-status-invalid-asof";
+  const events = [
+    ...approvalAwaitingEvents(matterId),
+    recordedStatusEvent(matterId, "settled", "2026-09-20T09:00:00Z"),
+  ];
+  const matter = makeCurrentStatusMatter(matterId);
+  for (const asOf of ["", "   ", "not-a-date"]) {
+    const derived = deriveCurrentStatusSlot(events, matterId, matter, asOf);
+    assert.equal(derived.state, "UNKNOWN", `Invalid asOf ${JSON.stringify(asOf)} must be UNKNOWN`);
+    assert.equal(derived.value, "Unknown");
+    assert.notEqual(derived.value, "The matter is settled.");
+  }
+});
+
+test("current-status: equal timestamps tie-break by eventId", () => {
+  const matterId = "test-matter-status-tie";
+  const stamp = "2026-09-17T17:45:00Z";
+  const approval = approvalAwaitingEvents(matterId);
+  const settledWins = deriveCurrentStatusSlot(
+    [
+      ...approval,
+      recordedStatusEvent(matterId, "settled", stamp, `${matterId}-zzz-settled`),
+    ],
+    matterId,
+    makeCurrentStatusMatter(matterId),
+    CURRENT_STATUS_AS_OF,
+  );
+  assert.equal(settledWins.value, "The matter is settled.");
+
+  const approvalWins = deriveCurrentStatusSlot(
+    [
+      ...approval,
+      recordedStatusEvent(matterId, "settled", stamp, `${matterId}-aaa-settled`),
+    ],
+    matterId,
+    makeCurrentStatusMatter(matterId),
+    CURRENT_STATUS_AS_OF,
+  );
+  assert.equal(approvalWins.value, "Settlement revisions are awaiting client approval.");
+  assert.notEqual(approvalWins.value, "The matter is settled.");
 });
 
 // Tests for last-important-event slot derivation
@@ -4179,7 +4432,6 @@ test("derived owner slot matches ground-truth expectation", () => {
     extractedEvents,
     syntheticMatters[0].id,
     syntheticMatters[0],
-    evidenceProcessing.eligibleEvidence,
     syntheticRequestingUser,
     syntheticCurrentStateGroundTruth.asOf,
   );
@@ -4242,7 +4494,6 @@ test("owner: no responsibility events returns UNKNOWN", () => {
     ],
     matterId,
     makeOwnerMatter(matterId),
-    [],
     syntheticRequestingUser,
     OWNER_AS_OF,
   );
@@ -4278,7 +4529,6 @@ test("owner: structured actor name is SUPPORTED", () => {
     ],
     matterId,
     makeOwnerMatter(matterId),
-    [],
     syntheticRequestingUser,
     OWNER_AS_OF,
   );
@@ -4311,7 +4561,6 @@ test("owner: attorney role label without a named person is UNKNOWN", () => {
     ],
     matterId,
     makeOwnerMatter(matterId, { responsibleAttorney: "Priya Nair" }),
-    [],
     syntheticRequestingUser,
     OWNER_AS_OF,
   );
@@ -4346,7 +4595,6 @@ test("owner: assignedPerson matching a known identity is SUPPORTED", () => {
     ],
     matterId,
     makeOwnerMatter(matterId, { responsibleAttorney: "Priya Nair" }),
-    [],
     syntheticRequestingUser,
     OWNER_AS_OF,
   );
@@ -4378,7 +4626,6 @@ test("owner: action text naming a known identity without assignedPerson is UNKNO
     ],
     matterId,
     makeOwnerMatter(matterId, { responsibleAttorney: "Priya Nair" }),
-    [],
     syntheticRequestingUser,
     OWNER_AS_OF,
   );
@@ -4410,7 +4657,6 @@ test("owner: unknown name in text without structured identity is UNKNOWN", () =>
     ],
     matterId,
     makeOwnerMatter(matterId, { responsibleAttorney: "Priya Nair" }),
-    [],
     syntheticRequestingUser,
     OWNER_AS_OF,
   );
@@ -4446,7 +4692,6 @@ test("owner: structured data wins over a different name in action text", () => {
     ],
     matterId,
     makeOwnerMatter(matterId, { responsibleAttorney: "Priya Nair" }),
-    [],
     syntheticRequestingUser,
     OWNER_AS_OF,
   );
@@ -4500,7 +4745,6 @@ test("owner: later responsibility event supersedes an earlier one", () => {
     ],
     matterId,
     makeOwnerMatter(matterId, { responsibleAttorney: "Priya Nair" }),
-    [],
     syntheticRequestingUser,
     OWNER_AS_OF,
   );
@@ -4555,7 +4799,6 @@ test("owner: events after asOf are ignored", () => {
     ],
     matterId,
     makeOwnerMatter(matterId, { responsibleAttorney: "Priya Nair" }),
-    [],
     syntheticRequestingUser,
     "2026-09-17T23:59:59Z",
   );
@@ -4587,7 +4830,6 @@ test("owner: client actor is not treated as the matter owner", () => {
     ],
     matterId,
     makeOwnerMatter(matterId),
-    [],
     syntheticRequestingUser,
     OWNER_AS_OF,
   );
@@ -4620,7 +4862,6 @@ test("owner: matter isolation ignores another matter's assignment", () => {
     ],
     matterId,
     makeOwnerMatter(matterId),
-    [],
     syntheticRequestingUser,
     OWNER_AS_OF,
   );
@@ -4654,7 +4895,6 @@ test("owner: invalid asOf is UNKNOWN", () => {
     events,
     matterId,
     makeOwnerMatter(matterId),
-    [],
     syntheticRequestingUser,
     "not-a-date",
   );
@@ -4671,7 +4911,6 @@ test("owner: mutation removing responsibility events breaks the ground-truth mat
     withoutResponsibility,
     syntheticMatters[0].id,
     syntheticMatters[0],
-    evidenceProcessing.eligibleEvidence,
     syntheticRequestingUser,
     syntheticCurrentStateGroundTruth.asOf,
   );
@@ -4687,14 +4926,6 @@ test("owner: mutation removing responsibility events breaks the ground-truth mat
 test("owner: email from a known own-side person without assignedPerson is UNKNOWN", () => {
   const matterId = "test-matter-owner-email";
   const artifactId = `${matterId}-artifact-resp`;
-  const testEvidence: EligibleEvidenceItem[] = [
-    makeEmailEvidence({
-      id: artifactId,
-      from: "priya.nair@lawfirm.example",
-      to: ["jordan.smith@example.com"],
-      timestamp: "2026-09-12T09:00:00Z",
-    }),
-  ];
   const derived = deriveOwnerSlot(
     [
       makeOwnerEvent({
@@ -4716,7 +4947,6 @@ test("owner: email from a known own-side person without assignedPerson is UNKNOW
     ],
     matterId,
     makeOwnerMatter(matterId, { responsibleAttorney: "Priya Nair" }),
-    testEvidence,
     syntheticRequestingUser,
     OWNER_AS_OF,
   );
@@ -4749,7 +4979,6 @@ test("owner: omitted assignedPerson with actor Rachel transferring to Alex is UN
     ],
     matterId,
     makeOwnerMatter(matterId),
-    [],
     syntheticRequestingUser,
     OWNER_AS_OF,
   );
@@ -4783,7 +5012,6 @@ test("owner: omitted assignedPerson with actor Alex withdrawing is UNKNOWN", () 
     ],
     matterId,
     makeOwnerMatter(matterId),
-    [],
     syntheticRequestingUser,
     OWNER_AS_OF,
   );
@@ -4796,14 +5024,6 @@ test("owner: omitted assignedPerson with actor Alex withdrawing is UNKNOWN", () 
 test("owner: omitted assignedPerson with email from Rachel saying Alex took over is UNKNOWN", () => {
   const matterId = "test-matter-owner-omitted-rachel-email";
   const artifactId = `${matterId}-artifact-resp`;
-  const testEvidence: EligibleEvidenceItem[] = [
-    makeEmailEvidence({
-      id: artifactId,
-      from: "rachel.morgan@lawfirm.example",
-      to: ["jordan.smith@example.com"],
-      timestamp: "2026-09-12T09:00:00Z",
-    }),
-  ];
   const derived = deriveOwnerSlot(
     [
       makeOwnerEvent({
@@ -4825,7 +5045,6 @@ test("owner: omitted assignedPerson with email from Rachel saying Alex took over
     ],
     matterId,
     makeOwnerMatter(matterId),
-    testEvidence,
     syntheticRequestingUser,
     OWNER_AS_OF,
   );
@@ -4859,7 +5078,6 @@ test("owner: role label does not stand in for a person named only in the event",
     ],
     matterId,
     makeOwnerMatter(matterId, { responsibleAttorney: "Alex Thompson" }),
-    [],
     syntheticRequestingUser,
     OWNER_AS_OF,
   );
@@ -4888,7 +5106,7 @@ test("owner: unrecognized actor or object labels are UNKNOWN", () => {
   for (const label of labels) {
     for (const field of ["actor", "object"] as const) {
       const derived = deriveOwnerSlot(
-        [
+    [
           makeOwnerEvent({
             eventId: `${matterId}-${field}-${label}`,
             matterId,
@@ -4906,12 +5124,11 @@ test("owner: unrecognized actor or object labels are UNKNOWN", () => {
             },
           }),
         ],
-        matterId,
-        testMatter,
-        [],
-        syntheticRequestingUser,
-        OWNER_AS_OF,
-      );
+    matterId,
+    testMatter,
+    syntheticRequestingUser,
+    OWNER_AS_OF,
+  );
 
       assert.equal(
         derived.state,
@@ -4939,7 +5156,7 @@ test("owner: replacing/from/to text does not keep the outgoing owner", () => {
 
   for (const action of sentences) {
     const derived = deriveOwnerSlot(
-      [
+    [
         makeOwnerEvent({
           eventId: `${matterId}-${action.length}`,
           matterId,
@@ -4957,12 +5174,11 @@ test("owner: replacing/from/to text does not keep the outgoing owner", () => {
           },
         }),
       ],
-      matterId,
-      testMatter,
-      [],
-      syntheticRequestingUser,
-      OWNER_AS_OF,
-    );
+    matterId,
+    testMatter,
+    syntheticRequestingUser,
+    OWNER_AS_OF,
+  );
 
     assert.notEqual(derived.value, "Alex Thompson", `${JSON.stringify(action)} must not keep the outgoing owner`);
     assert.equal(
@@ -5003,7 +5219,6 @@ function deriveOwnerFromAssignment(
     ],
     matterId,
     makeOwnerMatter(matterId),
-    [],
     syntheticRequestingUser,
     OWNER_AS_OF,
   );

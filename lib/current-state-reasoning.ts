@@ -508,14 +508,16 @@ function isLaterBySourceRecordedAt(
   );
 }
 
-function latestClosedOrSettledStatus(
+function latestMatterStatusRecorded(
   events: OperationalEvent[]
 ): OperationalEvent | null {
-  const closedOrSettled = events.filter(isClosedOrSettledStatusEvent);
-  if (closedOrSettled.length === 0) {
+  const statusEvents = events.filter(
+    (event) => event.eventType === "MATTER_STATUS_RECORDED"
+  );
+  if (statusEvents.length === 0) {
     return null;
   }
-  return closedOrSettled.reduce((latest, current) => {
+  return statusEvents.reduce((latest, current) => {
     const latestTime = new Date(latest.provenance.sourceRecordedAt).getTime();
     const currentTime = new Date(current.provenance.sourceRecordedAt).getTime();
     if (currentTime > latestTime) return current;
@@ -794,31 +796,45 @@ export function deriveWaitingOnSlot(
  * Derives the current-status slot from operational events using supersession reasoning.
  *
  * A WAITING_STATE_REPORTED event is superseded by a later DOCUMENT_SENT,
- * APPROVAL_REQUESTED, or DOCUMENT_REVIEWED event. A later
- * MATTER_STATUS_RECORDED of settled or closed supersedes an open
- * approval or waiting state; the recorded status is then current.
+ * APPROVAL_REQUESTED, or DOCUMENT_REVIEWED event. The latest
+ * MATTER_STATUS_RECORDED at or before asOf supersedes an earlier open
+ * approval or waiting state only when that latest status is settled or
+ * closed; a later active status re-opens the matter. Only events at or
+ * before asOf are considered. Invalid asOf is UNKNOWN.
  * Status sentences are composed from semantics.documentForm,
  * semantics.documentSubject, semantics.approvalKind, and
  * semantics.recordedStatus — never by parsing action or object text.
  * Object is used only as a display noun when documentForm is plain or
  * omitted.
  */
+function unknownCurrentStatus(): StatusClaim {
+  return {
+    id: "current-status",
+    label: "Current Status",
+    value: "Unknown",
+    state: "UNKNOWN",
+    evidenceIds: [],
+  };
+}
+
 export function deriveCurrentStatusSlot(
   events: OperationalEvent[],
   matterId: string,
   matter: SyntheticMatter,
+  asOf: string,
 ): StatusClaim {
   void matter;
-  const matterEvents = events.filter((e) => e.matterId === matterId);
+  const asOfTime = parseAsOfTime(asOf);
+  if (asOfTime === null) {
+    return unknownCurrentStatus();
+  }
+
+  const matterEvents = events.filter(
+    (e) => e.matterId === matterId && getEventTimestamp(e) <= asOfTime
+  );
 
   if (matterEvents.length === 0) {
-    return {
-      id: "current-status",
-      label: "Current Status",
-      value: "Unknown",
-      state: "UNKNOWN",
-      evidenceIds: [],
-    };
+    return unknownCurrentStatus();
   }
 
   const latestEvent = matterEvents.reduce((latest, current) => {
@@ -877,12 +893,13 @@ export function deriveCurrentStatusSlot(
       return current.eventId > latest.eventId ? current : latest;
     });
 
-    const laterClosedOrSettled = latestClosedOrSettledStatus(matterEvents);
+    const latestStatusAfterApproval = latestMatterStatusRecorded(matterEvents);
     if (
-      laterClosedOrSettled &&
-      isLaterBySourceRecordedAt(laterClosedOrSettled, latestApproval)
+      latestStatusAfterApproval &&
+      isClosedOrSettledStatusEvent(latestStatusAfterApproval) &&
+      isLaterBySourceRecordedAt(latestStatusAfterApproval, latestApproval)
     ) {
-      return currentStatusFromRecordedStatus(laterClosedOrSettled);
+      return currentStatusFromRecordedStatus(latestStatusAfterApproval);
     }
 
     const docEvents = matterEvents.filter((e) => e.eventType === "DOCUMENT_SENT");
@@ -935,12 +952,13 @@ export function deriveCurrentStatusSlot(
       return current.eventId > latest.eventId ? current : latest;
     });
 
-    const laterClosedOrSettled = latestClosedOrSettledStatus(matterEvents);
+    const latestStatusAfterWaiting = latestMatterStatusRecorded(matterEvents);
     if (
-      laterClosedOrSettled &&
-      isLaterBySourceRecordedAt(laterClosedOrSettled, latestWaiting)
+      latestStatusAfterWaiting &&
+      isClosedOrSettledStatusEvent(latestStatusAfterWaiting) &&
+      isLaterBySourceRecordedAt(latestStatusAfterWaiting, latestWaiting)
     ) {
-      return currentStatusFromRecordedStatus(laterClosedOrSettled);
+      return currentStatusFromRecordedStatus(latestStatusAfterWaiting);
     }
 
     const waitingFor = latestWaiting.object || "action";
@@ -1218,11 +1236,9 @@ export function deriveOwnerSlot(
   events: OperationalEvent[],
   matterId: string,
   matter: SyntheticMatter,
-  eligibleEvidence: EligibleEvidenceItem[],
   requestingUser: SyntheticUser,
   asOf: string
 ): StatusClaim {
-  void eligibleEvidence;
   const asOfTime = parseAsOfTime(asOf);
   if (asOfTime === null) {
     return unknownOwner();

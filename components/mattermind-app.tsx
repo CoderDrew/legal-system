@@ -32,6 +32,7 @@ const derivedCurrentStatusSlot = deriveCurrentStatusSlot(
   operationalEvents,
   syntheticMatterBrief.matter.id,
   syntheticMatterBrief.matter,
+  syntheticCurrentStateGroundTruth.asOf,
 );
 
 const derivedLastImportantEventSlot = deriveLastImportantEventSlot(
@@ -60,7 +61,6 @@ const derivedOwnerSlot = deriveOwnerSlot(
   operationalEvents,
   syntheticMatterBrief.matter.id,
   syntheticMatterBrief.matter,
-  evidenceProcessing.eligibleEvidence,
   syntheticRequestingUser,
   syntheticCurrentStateGroundTruth.asOf,
 );
