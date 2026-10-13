@@ -132,6 +132,35 @@ test("selecting another matter reconstructs that matter rather than Smith v. Acm
   }
 });
 
+const KNOWN_FINDINGS: ReadonlyArray<{
+  matterId: string;
+  matterName: string;
+  slotId: (typeof BRIEF_SLOT_IDS)[number];
+}> = [
+  {
+    matterId: "matter-2026-0160",
+    matterName: "Chen Employment File",
+    slotId: "current-status",
+  },
+  {
+    matterId: "matter-2026-0163",
+    matterName: "Alan Smith v. Westfield",
+    slotId: "current-status",
+  },
+  {
+    matterId: "matter-2026-0163",
+    matterName: "Alan Smith v. Westfield",
+    slotId: "next-action",
+  },
+];
+
+function isKnownFinding(slot: (typeof scorecard.slots)[number]): boolean {
+  return KNOWN_FINDINGS.some(
+    (finding) =>
+      finding.matterId === slot.matterId && finding.slotId === slot.slotId,
+  );
+}
+
 test("the corpus scorecard reports every matter and slot without dropping rows", () => {
   assert.equal(scorecard.matterCount, 7);
   assert.equal(scorecard.slotCount, 49);
@@ -150,3 +179,65 @@ test("the corpus scorecard reports every matter and slot without dropping rows",
   const mismatches = listCorpusMismatches(scorecard);
   assert.equal(Array.isArray(mismatches), true);
 });
+
+test("every corpus slot matches ground truth except the three pinned findings", () => {
+  assert.equal(scorecard.correct, 46);
+  assert.equal(scorecard.wrongConfident, 3);
+  assert.equal(scorecard.falseUnknown, 0);
+  assert.equal(scorecard.stateMismatch, 0);
+
+  const pinned = scorecard.slots.filter(isKnownFinding);
+  assert.equal(pinned.length, KNOWN_FINDINGS.length);
+  for (const finding of KNOWN_FINDINGS) {
+    const slot = pinned.find(
+      (row) =>
+        row.matterId === finding.matterId && row.slotId === finding.slotId,
+    );
+    assertDefinedSlot(slot, finding);
+    assert.equal(slot.matterName, finding.matterName);
+    assert.equal(
+      slot.outcome,
+      "wrong_confident",
+      `${finding.matterName} ${finding.slotId} is a pinned finding and must stay wrong-confident until the pin is updated`,
+    );
+    assert.equal(slot.wrongConfident, true);
+    assert.equal(
+      slot.actualState === slot.expectedState &&
+        slot.actualValue === (slot.expectedValue ?? "Unknown"),
+      false,
+      `${finding.matterName} ${finding.slotId} must still disagree with ground truth`,
+    );
+  }
+
+  const remaining = scorecard.slots.filter((slot) => !isKnownFinding(slot));
+  assert.equal(remaining.length, 46);
+  for (const slot of remaining) {
+    assert.equal(
+      slot.actualState,
+      slot.expectedState,
+      `${slot.matterName} ${slot.slotId} state`,
+    );
+    assert.equal(
+      slot.actualValue,
+      slot.expectedValue ?? "Unknown",
+      `${slot.matterName} ${slot.slotId} value`,
+    );
+    assert.equal(
+      slot.outcome === "correct" || slot.outcome === "correctly_unknown",
+      true,
+      `${slot.matterName} ${slot.slotId}: expected ${slot.expectedState} ${String(slot.expectedValue)} actual ${slot.actualState} ${slot.actualValue}`,
+    );
+    assert.equal(slot.wrongConfident, false);
+  }
+});
+
+function assertDefinedSlot(
+  slot: (typeof scorecard.slots)[number] | undefined,
+  finding: (typeof KNOWN_FINDINGS)[number],
+): asserts slot is (typeof scorecard.slots)[number] {
+  assert.equal(
+    slot === undefined,
+    false,
+    `${finding.matterName} ${finding.slotId} must remain in the scorecard`,
+  );
+}

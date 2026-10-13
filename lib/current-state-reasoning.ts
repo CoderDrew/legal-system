@@ -647,6 +647,16 @@ function formatLastImportantEventDescription(
   return description;
 }
 
+function unknownLastImportantEvent(): StatusClaim {
+  return {
+    id: "last-important-event",
+    label: "Last Important Event",
+    value: "Unknown",
+    state: "UNKNOWN",
+    evidenceIds: [],
+  };
+}
+
 /**
  * Derives the last-important-event slot from operational events.
  *
@@ -657,27 +667,29 @@ function formatLastImportantEventDescription(
  * APPROVAL_REQUESTED uses a client-approval template only when
  * semantics.approvalKind is a client kind and object is present.
  * Other events use actor plus the display `action` field; `action` is
- * not parsed for meaning.
+ * not parsed for meaning. Only events at or before asOf are considered.
+ * Invalid asOf is UNKNOWN.
  */
 export function deriveLastImportantEventSlot(
   events: OperationalEvent[],
   matterId: string,
   matter: SyntheticMatter,
+  asOf: string,
 ): StatusClaim {
+  const asOfTime = parseAsOfTime(asOf);
+  if (asOfTime === null) {
+    return unknownLastImportantEvent();
+  }
+
   const matterEvents = events.filter((e) =>
     e.matterId === matterId &&
     e.eventType !== "MATTER_STATUS_RECORDED" &&
-    e.eventType !== "RESPONSIBILITY_RECORDED"
+    e.eventType !== "RESPONSIBILITY_RECORDED" &&
+    getEventTimestamp(e) <= asOfTime
   );
 
   if (matterEvents.length === 0) {
-    return {
-      id: "last-important-event",
-      label: "Last Important Event",
-      value: "Unknown",
-      state: "UNKNOWN",
-      evidenceIds: [],
-    };
+    return unknownLastImportantEvent();
   }
 
   const latestEvent = getLatestEvent(matterEvents);
@@ -700,6 +712,16 @@ export function deriveLastImportantEventSlot(
   };
 }
 
+function unknownWaitingOn(): StatusClaim {
+  return {
+    id: "waiting-on",
+    label: "Waiting On",
+    value: "Unknown",
+    state: "UNKNOWN",
+    evidenceIds: [],
+  };
+}
+
 /**
  * Derives the waiting-on slot from operational events.
  *
@@ -710,23 +732,26 @@ export function deriveLastImportantEventSlot(
  *
  * A later substantive event after an open approval downgrades SUPPORTED
  * to INFERRED (staleness), which is reasoning rather than text inference.
+ * Only events at or before asOf are considered. Invalid asOf is UNKNOWN.
  */
 export function deriveWaitingOnSlot(
   events: OperationalEvent[],
   matterId: string,
   matter: SyntheticMatter,
   eligibleEvidence: EligibleEvidenceItem[],
+  asOf: string,
 ): StatusClaim {
-  const matterEvents = events.filter((e) => e.matterId === matterId);
+  const asOfTime = parseAsOfTime(asOf);
+  if (asOfTime === null) {
+    return unknownWaitingOn();
+  }
+
+  const matterEvents = events.filter(
+    (e) => e.matterId === matterId && getEventTimestamp(e) <= asOfTime
+  );
 
   if (matterEvents.length === 0) {
-    return {
-      id: "waiting-on",
-      label: "Waiting On",
-      value: "Unknown",
-      state: "UNKNOWN",
-      evidenceIds: [],
-    };
+    return unknownWaitingOn();
   }
 
   const openWaitingEvents = collectOpenWaitingEvents(matterEvents);
@@ -1258,10 +1283,10 @@ function conflictingOwner(evidenceIds: string[]): StatusClaim {
   };
 }
 
-function assignedPersonKey(event: OperationalEvent): string {
+function assignedPersonKey(event: OperationalEvent): string | null {
   const semantics = eventSemantics(event);
   if (!Object.prototype.hasOwnProperty.call(semantics, "assignedPerson")) {
-    return "<omitted>";
+    return null;
   }
   if (!semantics.assignedPerson) {
     return "<none>";
@@ -1277,8 +1302,10 @@ function assignedPersonKey(event: OperationalEvent): string {
  * event records one; explicit null means no current assignee. When
  * assignedPerson is omitted, the slot is UNKNOWN. Two latest-timestamp
  * records that disagree on assignedPerson are CONFLICTING rather than a
- * tie-broken name. Actor, object, and source-email are not used as the
- * assignee. Action text is never parsed. Invalid asOf is UNKNOWN.
+ * tie-broken name. Omitted assignedPerson is not a competing value; an
+ * explicit null against a named assignee is CONFLICTING. Actor, object,
+ * and source-email are not used as the assignee. Action text is never
+ * parsed. Invalid asOf is UNKNOWN.
  */
 export function deriveOwnerSlot(
   events: OperationalEvent[],
@@ -1308,15 +1335,22 @@ export function deriveOwnerSlot(
   const latestGroup = responsibilityEvents.filter(
     (event) => getEventTimestamp(event) === latestTime
   );
-  const assignedKeys = new Set(latestGroup.map(assignedPersonKey));
+  const currentAssigneeEvents = latestGroup.filter(
+    (event) => assignedPersonKey(event) !== null
+  );
+  const assignedKeys = new Set(currentAssigneeEvents.map(assignedPersonKey));
   if (assignedKeys.size > 1) {
     return conflictingOwner(
-      latestGroup.map((event) => event.provenance.sourceArtifactId)
+      currentAssigneeEvents.map((event) => event.provenance.sourceArtifactId)
     );
   }
 
-  const evidenceId = latest.provenance.sourceArtifactId;
-  const semantics = eventSemantics(latest);
+  const chosen =
+    currentAssigneeEvents.length > 0
+      ? getLatestEvent(currentAssigneeEvents)
+      : latest;
+  const evidenceId = chosen.provenance.sourceArtifactId;
+  const semantics = eventSemantics(chosen);
 
   if (!Object.prototype.hasOwnProperty.call(semantics, "assignedPerson")) {
     return unknownOwner();
@@ -1498,10 +1532,18 @@ function conflictingImportantDate(evidenceIds: string[]): StatusClaim {
 function scheduleDateKey(
   event: OperationalEvent,
   asOfTime: number
-): string {
-  const date = currentScheduleDate(event);
+): string | null {
+  const semantics = eventSemantics(event);
+  if (!Object.prototype.hasOwnProperty.call(semantics, "scheduledDate")) {
+    return null;
+  }
+  const scheduledDate = semantics.scheduledDate;
+  if (!scheduledDate) {
+    return "<cancelled>";
+  }
+  const date = parseCompleteCalendarDate(scheduledDate);
   if (!date || !isCalendarDateCurrentAsOf(date, asOfTime)) {
-    return "<none>";
+    return null;
   }
   return `${date.year}-${date.month}-${date.day}`;
 }
@@ -1527,8 +1569,10 @@ function currentScheduleDate(event: OperationalEvent): CalendarDate | null {
  * When scheduledDate is omitted, the slot is UNKNOWN. `object` is not
  * parsed as a date. Action text is never parsed. Two latest-timestamp
  * reports that disagree on the current date are CONFLICTING rather than
- * a tie-broken date. A date whose UTC calendar day is before asOf is
- * no longer current. Invalid asOf is UNKNOWN.
+ * a tie-broken date. Omitted scheduledDate and past or non-current dates
+ * are not competing values; an explicit null (cancellation) against a
+ * current date is CONFLICTING. A date whose UTC calendar day is before
+ * asOf is no longer current. Invalid asOf is UNKNOWN.
  */
 export function deriveImportantDateSlot(
   events: OperationalEvent[],
@@ -1556,17 +1600,24 @@ export function deriveImportantDateSlot(
   const latestGroup = scheduleEvents.filter(
     (event) => getEventTimestamp(event) === latestTime
   );
+  const currentDateEvents = latestGroup.filter(
+    (event) => scheduleDateKey(event, asOfTime) !== null
+  );
   const dateKeys = new Set(
-    latestGroup.map((event) => scheduleDateKey(event, asOfTime))
+    currentDateEvents.map((event) => scheduleDateKey(event, asOfTime))
   );
   if (dateKeys.size > 1) {
     return conflictingImportantDate(
-      latestGroup.map((event) => event.provenance.sourceArtifactId)
+      currentDateEvents.map((event) => event.provenance.sourceArtifactId)
     );
   }
 
-  const evidenceId = latest.provenance.sourceArtifactId;
-  const structuredDate = currentScheduleDate(latest);
+  const chosen =
+    currentDateEvents.length > 0
+      ? getLatestEvent(currentDateEvents)
+      : latest;
+  const evidenceId = chosen.provenance.sourceArtifactId;
+  const structuredDate = currentScheduleDate(chosen);
 
   if (structuredDate && isCalendarDateCurrentAsOf(structuredDate, asOfTime)) {
     return importantDateClaim(structuredDate, evidenceId);

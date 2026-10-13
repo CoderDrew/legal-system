@@ -1140,6 +1140,38 @@ test("current-status: waiting-on followed by settled uses the recorded status", 
   assert.deepEqual(derived.evidenceIds, [`${matterId}-artifact-settled`]);
 });
 
+test("current-status: settled then a later waiting event is waiting", () => {
+  const matterId = "test-matter-status-settled-then-waiting";
+  const derived = deriveCurrentStatusSlot(
+    [
+      recordedStatusEvent(matterId, "settled", "2026-09-12T09:00:00Z"),
+      makeCurrentStatusEvent({
+        eventId: `${matterId}-waiting`,
+        matterId,
+        eventType: "WAITING_STATE_REPORTED",
+        occurredAt: "2026-09-19T15:20:00Z",
+        actor: "Rachel Morgan",
+        action: "Reported waiting for opposing-counsel production.",
+        object: "opposing-counsel production",
+        provenance: {
+          sourceArtifactId: `${matterId}-artifact-waiting`,
+          sourceSystem: "Outlook",
+          sourceRecordedAt: "2026-09-19T15:20:00Z",
+          associationMethod: "EXPLICIT_MATTER_ID",
+          evidenceExcerpt: "waiting for opposing-counsel production",
+        },
+      }),
+    ],
+    matterId,
+    makeCurrentStatusMatter(matterId),
+    CURRENT_STATUS_AS_OF,
+  );
+  assert.equal(derived.state, "SUPPORTED");
+  assert.equal(derived.value, "Waiting for opposing-counsel production");
+  assert.notEqual(derived.value, "The matter is settled.");
+  assert.deepEqual(derived.evidenceIds, [`${matterId}-artifact-waiting`]);
+});
+
 test("current-status: re-opened active status after settled does not stay settled", () => {
   const matterId = "test-matter-status-reopened";
   const derived = deriveCurrentStatusSlot(
@@ -1259,6 +1291,7 @@ test("derived last-important-event slot matches ground-truth expectation", () =>
     extractedEvents,
     syntheticMatters[0].id,
     syntheticMatters[0],
+    CURRENT_STATUS_AS_OF,
   );
   const expectation = syntheticCurrentStateGroundTruth.expectations.find(
     (exp) => exp.slotId === "last-important-event",
@@ -1355,6 +1388,7 @@ test("last-important-event: identifies most recent event by timestamp", () => {
     syntheticEvents,
     "test-matter-lie-001",
     testMatter,
+    CURRENT_STATUS_AS_OF,
   );
 
   assert.equal(derived.state, "SUPPORTED");
@@ -1399,6 +1433,7 @@ test("last-important-event: formats date and actor correctly", () => {
     syntheticEvents,
     "test-matter-lie-002",
     testMatter,
+    CURRENT_STATUS_AS_OF,
   );
 
   assert.equal(derived.state, "SUPPORTED");
@@ -1460,6 +1495,7 @@ test("last-important-event: excludes record-keeping events (substantive event wi
     syntheticEvents,
     "test-matter-lie-003",
     testMatter,
+    CURRENT_STATUS_AS_OF,
   );
 
   assert.equal(derived.state, "SUPPORTED");
@@ -1484,6 +1520,7 @@ test("last-important-event: returns UNKNOWN when no events", () => {
     [],
     "nonexistent-matter",
     testMatter,
+    CURRENT_STATUS_AS_OF,
   );
 
   assert.equal(derived.state, "UNKNOWN");
@@ -1543,6 +1580,7 @@ test("last-important-event: uses eventId as tie-breaker for same timestamp", () 
     syntheticEvents,
     "test-matter-lie-004",
     testMatter,
+    CURRENT_STATUS_AS_OF,
   );
 
   assert.equal(derived.state, "SUPPORTED");
@@ -1556,11 +1594,13 @@ test("last-important-event: deterministic across multiple calls", () => {
     extractedEvents,
     syntheticMatters[0].id,
     syntheticMatters[0],
+    CURRENT_STATUS_AS_OF,
   );
   const derived2 = deriveLastImportantEventSlot(
     extractedEvents,
     syntheticMatters[0].id,
     syntheticMatters[0],
+    CURRENT_STATUS_AS_OF,
   );
 
   assert.deepEqual(
@@ -1622,6 +1662,7 @@ test("last-important-event: uses only events from specified matter", () => {
     multiMatterEvents,
     "matter-1",
     testMatter,
+    CURRENT_STATUS_AS_OF,
   );
 
   assert.equal(derived.state, "SUPPORTED");
@@ -1683,6 +1724,7 @@ test("last-important-event: handles events out of chronological order in array",
     syntheticEvents,
     "test-matter-lie-005",
     testMatter,
+    CURRENT_STATUS_AS_OF,
   );
 
   assert.equal(derived.state, "SUPPORTED");
@@ -1727,12 +1769,121 @@ test("last-important-event: handles regex special characters in client name", ()
     syntheticEvents,
     "test-matter-lie-006",
     testMatter,
+    CURRENT_STATUS_AS_OF,
   );
 
   assert.equal(derived.state, "SUPPORTED");
   // MF3: Should correctly handle parentheses without regex errors
   assert.equal(derived.value.includes("September 17, 2026"), true);
   assert.equal(!derived.value.includes("[REGEX ERROR]"), true);
+});
+
+test("last-important-event: events after asOf are ignored", () => {
+  const testMatter = {
+    id: "test-matter-lie-asof",
+    matterNumber: "2026-LIE-ASOF",
+    name: "asOf Filter Test",
+    client: "Test Client",
+    responsibleAttorney: "Test Attorney",
+    status: "Active" as const,
+    participantIds: ["test-client"],
+  };
+  const syntheticEvents: OperationalEvent[] = [
+    {
+      eventId: "test-lie-before",
+      matterId: "test-matter-lie-asof",
+      eventType: "DOCUMENT_SENT",
+      occurredAt: "2026-09-10T14:00:00Z",
+      actor: "Attorney",
+      action: "Sent the September analysis",
+      object: "September analysis",
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: "test-artifact-lie-before",
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-10T14:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "September analysis",
+      },
+    },
+    {
+      eventId: "test-lie-after",
+      matterId: "test-matter-lie-asof",
+      eventType: "DOCUMENT_SENT",
+      occurredAt: "2026-09-20T15:00:00Z",
+      actor: "Attorney",
+      action: "Sent the October analysis",
+      object: "October analysis",
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: "test-artifact-lie-after",
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-20T15:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "October analysis",
+      },
+    },
+  ];
+
+  const derived = deriveLastImportantEventSlot(
+    syntheticEvents,
+    "test-matter-lie-asof",
+    testMatter,
+    "2026-09-15T23:59:59Z",
+  );
+
+  assert.equal(derived.state, "SUPPORTED");
+  assert.equal(derived.evidenceIds[0], "test-artifact-lie-before");
+  assert.equal(derived.value.includes("September 10, 2026"), true);
+  assert.equal(derived.value.includes("September 20, 2026"), false);
+  assert.equal(derived.value.includes("October analysis"), false);
+});
+
+test("last-important-event: invalid asOf is UNKNOWN", () => {
+  const testMatter = {
+    id: "test-matter-lie-invalid-asof",
+    matterNumber: "2026-LIE-INVALID",
+    name: "Invalid asOf Test",
+    client: "Test Client",
+    responsibleAttorney: "Test Attorney",
+    status: "Active" as const,
+    participantIds: ["test-client"],
+  };
+  const syntheticEvents: OperationalEvent[] = [
+    {
+      eventId: "test-lie-invalid",
+      matterId: "test-matter-lie-invalid-asof",
+      eventType: "DOCUMENT_SENT",
+      occurredAt: "2026-09-10T14:00:00Z",
+      actor: "Attorney",
+      action: "Sent the analysis",
+      object: "Analysis",
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: "test-artifact-lie-invalid",
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-10T14:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "analysis",
+      },
+    },
+  ];
+
+  for (const asOf of ["", "   ", "not-a-date"]) {
+    const derived = deriveLastImportantEventSlot(
+      syntheticEvents,
+      "test-matter-lie-invalid-asof",
+      testMatter,
+      asOf,
+    );
+    assert.equal(
+      derived.state,
+      "UNKNOWN",
+      `Invalid asOf ${JSON.stringify(asOf)} must be UNKNOWN`,
+    );
+    assert.equal(derived.value, "Unknown");
+    assert.equal(derived.evidenceIds.length, 0);
+  }
 });
 
 // ===== Waiting-on slot tests =====
@@ -1743,6 +1894,7 @@ test("derived waiting-on slot matches ground-truth expectation", () => {
     syntheticMatters[0].id,
     syntheticMatters[0],
     evidenceProcessing.eligibleEvidence,
+    CURRENT_STATUS_AS_OF,
   );
   const expectation = syntheticCurrentStateGroundTruth.expectations.find(
     (exp) => exp.slotId === "waiting-on",
@@ -1850,6 +2002,7 @@ test("waiting-on: open approval request is detected", () => {
     "test-matter-wait-001",
     testMatter,
     testEvidence,
+    CURRENT_STATUS_AS_OF,
   );
 
   assert.equal(derived.state, "SUPPORTED");
@@ -1965,6 +2118,7 @@ test("waiting-on: waiting state superseded by later event", () => {
     "test-matter-wait-002",
     testMatter,
     testEvidence,
+    CURRENT_STATUS_AS_OF,
   );
 
   // The old waiting state should be superseded; should show the new approval request
@@ -2053,6 +2207,7 @@ test("waiting-on: multiple open waits, uses most recent", () => {
     "test-matter-wait-003",
     testMatter,
     testEvidence,
+    CURRENT_STATUS_AS_OF,
   );
 
   // Should use the most recent approval request (Sep 15)
@@ -2099,6 +2254,7 @@ test("waiting-on: no open waits returns UNKNOWN", () => {
     "test-matter-wait-004",
     testMatter,
     testEvidence,
+    CURRENT_STATUS_AS_OF,
   );
 
   assert.equal(derived.state, "UNKNOWN");
@@ -2223,12 +2379,14 @@ test("waiting-on: matter isolation - only uses events from specified matter", ()
     "test-matter-wait-005a",
     testMatter1,
     testEvidence,
+    CURRENT_STATUS_AS_OF,
   );
   const derivedB = deriveWaitingOnSlot(
     syntheticEvents,
     "test-matter-wait-005b",
     testMatter2,
     testEvidence,
+    CURRENT_STATUS_AS_OF,
   );
 
   // Matter A should only see its own approval
@@ -2260,6 +2418,7 @@ test("waiting-on: no events returns UNKNOWN", () => {
     "test-matter-wait-006",
     testMatter,
     testEvidence,
+    CURRENT_STATUS_AS_OF,
   );
 
   assert.equal(derived.state, "UNKNOWN");
@@ -2306,6 +2465,7 @@ test("waiting-on MF2: short name substring does not match (Al vs Alan Smith)", (
     "test-matter-mf2-001",
     testMatter,
     testEvidence,
+    CURRENT_STATUS_AS_OF,
   );
 
   // Action text is not parsed. Without approvalKind or a client recipient,
@@ -2355,6 +2515,7 @@ test("waiting-on MF2: curly apostrophe in client name", () => {
     "test-matter-mf2-002",
     testMatter,
     testEvidence,
+    CURRENT_STATUS_AS_OF,
   );
 
   assert.equal(derived.state, "SUPPORTED");
@@ -2399,6 +2560,7 @@ test("waiting-on MF2: non-client approver (Ann vs Joanne Smith)", () => {
     "test-matter-mf2-003",
     testMatter,
     testEvidence,
+    CURRENT_STATUS_AS_OF,
   );
 
   // Action text is not parsed. A non-client name in the action is UNKNOWN.
@@ -2447,6 +2609,7 @@ test("waiting-on MF2: name with apostrophe (O'Brien)", () => {
     "test-matter-mf2-004",
     testMatter,
     testEvidence,
+    CURRENT_STATUS_AS_OF,
   );
 
   assert.equal(derived.state, "SUPPORTED");
@@ -2494,6 +2657,7 @@ test("waiting-on MF2: name with hyphen (Mary-Kate)", () => {
     "test-matter-mf2-005",
     testMatter,
     testEvidence,
+    CURRENT_STATUS_AS_OF,
   );
 
   assert.equal(derived.state, "SUPPORTED");
@@ -2538,6 +2702,7 @@ test("waiting-on MF2: 'approve' phrasing without 'approval' keyword", () => {
     "test-matter-mf2-006",
     testMatter,
     testEvidence,
+    CURRENT_STATUS_AS_OF,
   );
 
   // "approve" in action text is not a structured fact.
@@ -2604,6 +2769,7 @@ test("waiting-on MF3: approval with later substantive event is INFERRED", () => 
     "test-matter-mf3-001",
     testMatter,
     testEvidence,
+    CURRENT_STATUS_AS_OF,
   );
 
   // Approval with later substantive event should be INFERRED, not SUPPORTED
@@ -2675,6 +2841,7 @@ test("waiting-on MF2: email substring false positive (jordan.smithson@ vs Jordan
     "test-matter-mf2-email-001",
     testMatter,
     testEvidence,
+    CURRENT_STATUS_AS_OF,
   );
 
   // jordan.smithson@ is NOT jordan.smith@, and there is no approvalKind.
@@ -2745,6 +2912,7 @@ test("waiting-on MF2: email substring false positive (hal.smith@ vs Al Smith)", 
     "test-matter-mf2-email-002",
     testMatter,
     testEvidence,
+    CURRENT_STATUS_AS_OF,
   );
 
   // hal.smith@ is NOT al.smith@, and there is no approvalKind.
@@ -2816,11 +2984,121 @@ test("waiting-on MF2: text fallback with artifact is INFERRED", () => {
     "test-matter-mf2-fallback-001",
     testMatter,
     testEvidence,
+    CURRENT_STATUS_AS_OF,
   );
 
   // Sent to paralegal, not client. Action text is not parsed, so UNKNOWN.
   assert.equal(derived.state, "UNKNOWN");
   assert.equal(derived.value, "Unknown");
+});
+
+test("waiting-on: events after asOf are ignored", () => {
+  const testMatter = {
+    id: "test-matter-wait-asof",
+    matterNumber: "2026-WAIT-ASOF",
+    name: "Waiting asOf Test",
+    client: "Test Client",
+    responsibleAttorney: "Test Attorney",
+    status: "Active" as const,
+    participantIds: ["test-client"],
+  };
+  const syntheticEvents: OperationalEvent[] = [
+    {
+      eventId: "test-wait-before",
+      matterId: "test-matter-wait-asof",
+      eventType: "WAITING_STATE_REPORTED",
+      occurredAt: "2026-09-10T14:00:00Z",
+      actor: "Attorney",
+      action: "Reported waiting for the September production.",
+      object: "the September production",
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: "test-artifact-wait-before",
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-10T14:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "waiting for the September production",
+      },
+    },
+    {
+      eventId: "test-wait-after",
+      matterId: "test-matter-wait-asof",
+      eventType: "WAITING_STATE_REPORTED",
+      occurredAt: "2026-09-20T15:00:00Z",
+      actor: "Attorney",
+      action: "Reported waiting for the October production.",
+      object: "the October production",
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: "test-artifact-wait-after",
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-20T15:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "waiting for the October production",
+      },
+    },
+  ];
+
+  const derived = deriveWaitingOnSlot(
+    syntheticEvents,
+    "test-matter-wait-asof",
+    testMatter,
+    [],
+    "2026-09-15T23:59:59Z",
+  );
+
+  assert.equal(derived.state, "SUPPORTED");
+  assert.equal(derived.value, "the September production");
+  assert.notEqual(derived.value, "the October production");
+  assert.deepEqual(derived.evidenceIds, ["test-artifact-wait-before"]);
+});
+
+test("waiting-on: invalid asOf is UNKNOWN", () => {
+  const testMatter = {
+    id: "test-matter-wait-invalid-asof",
+    matterNumber: "2026-WAIT-INVALID",
+    name: "Waiting invalid asOf Test",
+    client: "Test Client",
+    responsibleAttorney: "Test Attorney",
+    status: "Active" as const,
+    participantIds: ["test-client"],
+  };
+  const syntheticEvents: OperationalEvent[] = [
+    {
+      eventId: "test-wait-invalid",
+      matterId: "test-matter-wait-invalid-asof",
+      eventType: "WAITING_STATE_REPORTED",
+      occurredAt: "2026-09-10T14:00:00Z",
+      actor: "Attorney",
+      action: "Reported waiting for discovery responses.",
+      object: "discovery responses",
+      extractionMethod: "SYNTHETIC_GROUND_TRUTH",
+      provenance: {
+        sourceArtifactId: "test-artifact-wait-invalid",
+        sourceSystem: "Outlook",
+        sourceRecordedAt: "2026-09-10T14:00:00Z",
+        associationMethod: "EXPLICIT_MATTER_ID",
+        evidenceExcerpt: "waiting for discovery responses",
+      },
+    },
+  ];
+
+  for (const asOf of ["", "   ", "not-a-date"]) {
+    const derived = deriveWaitingOnSlot(
+      syntheticEvents,
+      "test-matter-wait-invalid-asof",
+      testMatter,
+      [],
+      asOf,
+    );
+    assert.equal(
+      derived.state,
+      "UNKNOWN",
+      `Invalid asOf ${JSON.stringify(asOf)} must be UNKNOWN`,
+    );
+    assert.equal(derived.value, "Unknown");
+    assert.equal(derived.evidenceIds.length, 0);
+  }
 });
 
 // ============================================================================
@@ -3833,6 +4111,7 @@ test("next-action and waiting-on agree on who is being waited on", () => {
     "test-matter-na-agree",
     testMatter,
     testEvidence,
+    CURRENT_STATUS_AS_OF,
   );
   const next = deriveNextActionSlot(
     syntheticEvents,
@@ -5478,6 +5757,59 @@ test("owner: same-timestamp assignedPerson disagreement is CONFLICTING", () => {
   ]);
 });
 
+test("owner: named assignee alongside omitted assignedPerson is SUPPORTED", () => {
+  const matterId = "test-matter-owner-omitted-placeholder";
+  const derived = deriveOwnerSlot(
+    [
+      makeOwnerEvent({
+        eventId: `${matterId}-aaa-named`,
+        matterId,
+        eventType: "RESPONSIBILITY_RECORDED",
+        occurredAt: "2026-09-16T12:00:00Z",
+        actor: null,
+        action: "Recorded Alex Thompson as the responsible attorney.",
+        object: "Responsible attorney",
+        semantics: {
+          assignedPerson: "Alex Thompson",
+        },
+        provenance: {
+          sourceArtifactId: `${matterId}-artifact-named`,
+          sourceSystem: "Clio",
+          sourceRecordedAt: "2026-09-16T12:00:00Z",
+          associationMethod: "AUTHORITATIVE_SOURCE_RELATIONSHIP",
+          evidenceExcerpt: "Alex Thompson",
+        },
+      }),
+      makeOwnerEvent({
+        eventId: `${matterId}-zzz-omitted`,
+        matterId,
+        eventType: "RESPONSIBILITY_RECORDED",
+        occurredAt: "2026-09-16T12:00:00Z",
+        actor: null,
+        action: "Recorded a responsibility update with no assignee.",
+        object: "Responsible attorney",
+        semantics: {},
+        provenance: {
+          sourceArtifactId: `${matterId}-artifact-omitted`,
+          sourceSystem: "Outlook",
+          sourceRecordedAt: "2026-09-16T12:00:00Z",
+          associationMethod: "EXPLICIT_MATTER_ID",
+          evidenceExcerpt: "no assignee",
+        },
+      }),
+    ],
+    matterId,
+    makeOwnerMatter(matterId),
+    syntheticRequestingUser,
+    OWNER_AS_OF,
+  );
+
+  assert.equal(derived.state, "SUPPORTED");
+  assert.equal(derived.value, "Alex Thompson");
+  assert.notEqual(derived.state, "CONFLICTING");
+  assert.deepEqual(derived.evidenceIds, [`${matterId}-artifact-named`]);
+});
+
 // ============================================================================
 // IMPORTANT-DATE SLOT TESTS
 // ============================================================================
@@ -5836,6 +6168,113 @@ test("important-date: same-timestamp calendar disagreement is CONFLICTING", () =
   assert.deepEqual(derived.evidenceIds, [
     `${matterId}-artifact-oct22`,
     `${matterId}-artifact-oct8`,
+  ]);
+});
+
+test("important-date: current date alongside omitted scheduledDate is SUPPORTED", () => {
+  const matterId = "test-matter-date-omitted-placeholder";
+  const derived = deriveImportantDateSlot(
+    [
+      scheduleStatusEvent({
+        matterId,
+        eventId: `${matterId}-aaa-dated`,
+        occurredAt: "2026-09-16T15:00:00Z",
+        sourceRecordedAt: "2026-09-16T15:00:00Z",
+        action: "Reported that the hearing remained scheduled for 2026-10-15.",
+        object: "Hearing",
+        artifactId: `${matterId}-artifact-dated`,
+        scheduledDate: "2026-10-15",
+      }),
+      scheduleStatusEvent({
+        matterId,
+        eventId: `${matterId}-zzz-omitted`,
+        occurredAt: "2026-09-16T15:00:00Z",
+        sourceRecordedAt: "2026-09-16T15:00:00Z",
+        action: "Reported a schedule update with no calendar date.",
+        object: "Hearing",
+        artifactId: `${matterId}-artifact-omitted`,
+      }),
+    ],
+    matterId,
+    IMPORTANT_DATE_AS_OF,
+  );
+
+  assert.equal(derived.state, "SUPPORTED");
+  assert.equal(derived.value, "October 15, 2026");
+  assert.notEqual(derived.state, "CONFLICTING");
+  assert.deepEqual(derived.evidenceIds, [`${matterId}-artifact-dated`]);
+});
+
+test("important-date: current date alongside a past date is SUPPORTED", () => {
+  const matterId = "test-matter-date-past-placeholder";
+  const derived = deriveImportantDateSlot(
+    [
+      scheduleStatusEvent({
+        matterId,
+        eventId: `${matterId}-aaa-current`,
+        occurredAt: "2026-09-16T15:00:00Z",
+        sourceRecordedAt: "2026-09-16T15:00:00Z",
+        action: "Reported that the hearing remained scheduled for 2026-10-15.",
+        object: "Hearing",
+        artifactId: `${matterId}-artifact-current`,
+        scheduledDate: "2026-10-15",
+      }),
+      scheduleStatusEvent({
+        matterId,
+        eventId: `${matterId}-zzz-past`,
+        occurredAt: "2026-09-16T15:00:00Z",
+        sourceRecordedAt: "2026-09-16T15:00:00Z",
+        action: "Reported that a prior date of 2026-09-01 was on the calendar.",
+        object: "Hearing",
+        artifactId: `${matterId}-artifact-past`,
+        scheduledDate: "2026-09-01",
+      }),
+    ],
+    matterId,
+    IMPORTANT_DATE_AS_OF,
+  );
+
+  assert.equal(derived.state, "SUPPORTED");
+  assert.equal(derived.value, "October 15, 2026");
+  assert.notEqual(derived.state, "CONFLICTING");
+  assert.deepEqual(derived.evidenceIds, [`${matterId}-artifact-current`]);
+});
+
+test("important-date: cancellation against a set date is CONFLICTING", () => {
+  const matterId = "test-matter-date-cancel-conflict";
+  const derived = deriveImportantDateSlot(
+    [
+      scheduleStatusEvent({
+        matterId,
+        eventId: `${matterId}-dated`,
+        occurredAt: "2026-09-16T15:00:00Z",
+        sourceRecordedAt: "2026-09-16T15:00:00Z",
+        action: "Reported that the hearing remained scheduled for 2026-10-15.",
+        object: "Hearing",
+        artifactId: `${matterId}-artifact-dated`,
+        scheduledDate: "2026-10-15",
+      }),
+      scheduleStatusEvent({
+        matterId,
+        eventId: `${matterId}-cancelled`,
+        occurredAt: "2026-09-16T15:00:00Z",
+        sourceRecordedAt: "2026-09-16T15:00:00Z",
+        action: "Reported that the hearing was cancelled.",
+        object: "Hearing",
+        artifactId: `${matterId}-artifact-cancelled`,
+        scheduledDate: null,
+      }),
+    ],
+    matterId,
+    IMPORTANT_DATE_AS_OF,
+  );
+
+  assert.equal(derived.state, "CONFLICTING");
+  assert.equal(derived.value, "Unknown");
+  assert.notEqual(derived.value, "October 15, 2026");
+  assert.deepEqual(derived.evidenceIds, [
+    `${matterId}-artifact-cancelled`,
+    `${matterId}-artifact-dated`,
   ]);
 });
 

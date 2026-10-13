@@ -36,8 +36,8 @@ export function deriveAllCurrentStateClaims({
 }): StatusClaim[] {
   return [
     deriveCurrentStatusSlot(events, matter.id, matter, asOf),
-    deriveLastImportantEventSlot(events, matter.id, matter),
-    deriveWaitingOnSlot(events, matter.id, matter, eligibleEvidence),
+    deriveLastImportantEventSlot(events, matter.id, matter, asOf),
+    deriveWaitingOnSlot(events, matter.id, matter, eligibleEvidence, asOf),
     deriveNextActionSlot(
       events,
       matter.id,
