@@ -6194,10 +6194,10 @@ test("derived significant-information slot matches ground-truth expectation", ()
 
 test("significant-information: opposing-counsel email domain gives SUPPORTED", () => {
   const matter = syntheticMatters[0];
-  const evidence = [cloneEvidence({ 
-    id: "test-opposing-email",
-    from: "opposing@external-law.example"
-  })];
+  const evidence = [
+    ...structuredClone(evidenceProcessing.eligibleEvidence),
+    cloneEvidence({ id: "test-opposing-email", from: "opposing@external-law.example" })
+  ];
   const events = [cloneDocEvent({
     eventId: "test-evt-opposing",
     matterId: matter.id,
@@ -6218,7 +6218,10 @@ test("significant-information: opposing-counsel email domain gives SUPPORTED", (
 
 test("significant-information: court actor gives SUPPORTED", () => {
   const matter = syntheticMatters[0];
-  const evidence = [cloneEvidence({ id: "test-court-doc" })];
+  const evidence = [
+    ...structuredClone(evidenceProcessing.eligibleEvidence),
+    cloneEvidence({ id: "test-court-doc" })
+  ];
   const events = [cloneDocEvent({
     eventId: "test-evt-court",
     matterId: matter.id,
@@ -6239,11 +6242,8 @@ test("significant-information: court actor gives SUPPORTED", () => {
 test("significant-information: client email gives UNKNOWN", () => {
   const matter = syntheticMatters[0];
   const evidence = [
-    ...evidenceProcessing.eligibleEvidence,
-    cloneEvidence({ 
-      id: "test-client-email",
-      from: "jordan.smith@clientco.example"
-    })
+    ...structuredClone(evidenceProcessing.eligibleEvidence),
+    cloneEvidence({ id: "test-client-email", from: "jordan.smith@clientco.example" })
   ];
   const events = [cloneDocEvent({
     eventId: "test-evt-client",
@@ -6265,11 +6265,8 @@ test("significant-information: client email gives UNKNOWN", () => {
 test("significant-information: own-firm email gives UNKNOWN", () => {
   const matter = syntheticMatters[0];
   const evidence = [
-    ...evidenceProcessing.eligibleEvidence,
-    cloneEvidence({ 
-      id: "test-firm-email",
-      from: "paralegal@lawfirm.example"
-    })
+    ...structuredClone(evidenceProcessing.eligibleEvidence),
+    cloneEvidence({ id: "test-firm-email", from: "paralegal@lawfirm.example" })
   ];
   const events = [cloneDocEvent({
     eventId: "test-evt-firm",
@@ -6291,11 +6288,8 @@ test("significant-information: own-firm email gives UNKNOWN", () => {
 test("significant-information: unidentifiable senders do not displace valid external doc", () => {
   const matter = syntheticMatters[0];
   const validEvidence = [
-    ...evidenceProcessing.eligibleEvidence,
-    cloneEvidence({ 
-      id: "test-valid-external",
-      from: "opposing@external-law.example"
-    })
+    ...structuredClone(evidenceProcessing.eligibleEvidence),
+    cloneEvidence({ id: "test-valid-external", from: "opposing@external-law.example" })
   ];
   const validEvent = cloneDocEvent({
     eventId: "test-evt-valid",
@@ -6343,6 +6337,7 @@ test("significant-information: unidentifiable senders do not displace valid exte
 test("significant-information: chooses latest of two external documents", () => {
   const matter = syntheticMatters[0];
   const evidence = [
+    ...structuredClone(evidenceProcessing.eligibleEvidence),
     cloneEvidence({ id: "test-early", from: "opposing@external-law.example" }),
     cloneEvidence({ id: "test-later", from: "opposing@external-law.example" }),
   ];
@@ -6377,6 +6372,7 @@ test("significant-information: chooses latest of two external documents", () => 
 test("significant-information: excludes external document after asOf", () => {
   const matter = syntheticMatters[0];
   const evidence = [
+    ...structuredClone(evidenceProcessing.eligibleEvidence),
     cloneEvidence({ id: "test-before", from: "opposing@external-law.example" }),
     cloneEvidence({ id: "test-after", from: "opposing@external-law.example" }),
   ];

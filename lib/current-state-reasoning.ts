@@ -2056,7 +2056,6 @@ export function deriveSignificantNewInformationSlot(
   );
 
   const externalDocumentEvents = documentEvents.filter((event) => {
-    return true; // MUTATION 1: Accept all as external
     // Exclude client and own side actors
     if (
       isClientActor(event.actor, matter) ||
