@@ -5761,6 +5761,45 @@ test("important-date: date on asOf day remains current", () => {
   assert.equal(derived.value, "September 17, 2026");
 });
 
+test("important-date: same-timestamp calendar disagreement is CONFLICTING", () => {
+  const matterId = "test-matter-date-conflict";
+  const derived = deriveImportantDateSlot(
+    [
+      scheduleStatusEvent({
+        matterId,
+        eventId: `${matterId}-oct8`,
+        occurredAt: "2026-09-16T15:00:00Z",
+        sourceRecordedAt: "2026-09-16T15:00:00Z",
+        action: "Reported that the motion hearing remained scheduled for 2026-10-08.",
+        object: "Motion hearing",
+        artifactId: `${matterId}-artifact-oct8`,
+        scheduledDate: "2026-10-08",
+      }),
+      scheduleStatusEvent({
+        matterId,
+        eventId: `${matterId}-oct22`,
+        occurredAt: "2026-09-16T15:00:00Z",
+        sourceRecordedAt: "2026-09-16T15:00:00Z",
+        action: "Reported that the motion hearing remained scheduled for 2026-10-22.",
+        object: "Motion hearing",
+        artifactId: `${matterId}-artifact-oct22`,
+        scheduledDate: "2026-10-22",
+      }),
+    ],
+    matterId,
+    IMPORTANT_DATE_AS_OF,
+  );
+
+  assert.equal(derived.state, "CONFLICTING");
+  assert.equal(derived.value, "Unknown");
+  assert.notEqual(derived.value, "October 8, 2026");
+  assert.notEqual(derived.value, "October 22, 2026");
+  assert.deepEqual(derived.evidenceIds, [
+    `${matterId}-artifact-oct22`,
+    `${matterId}-artifact-oct8`,
+  ]);
+});
+
 test("important-date: later schedule event supersedes an earlier date", () => {
   const matterId = "test-matter-date-supersede";
   const derived = deriveImportantDateSlot(

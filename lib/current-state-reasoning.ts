@@ -1459,6 +1459,27 @@ function importantDateClaim(
   };
 }
 
+function conflictingImportantDate(evidenceIds: string[]): StatusClaim {
+  return {
+    id: "important-date",
+    label: "Deadline / Important Date",
+    value: "Unknown",
+    state: "CONFLICTING",
+    evidenceIds: [...evidenceIds].sort(),
+  };
+}
+
+function scheduleDateKey(
+  event: OperationalEvent,
+  asOfTime: number
+): string {
+  const date = currentScheduleDate(event);
+  if (!date || !isCalendarDateCurrentAsOf(date, asOfTime)) {
+    return "<none>";
+  }
+  return `${date.year}-${date.month}-${date.day}`;
+}
+
 function currentScheduleDate(event: OperationalEvent): CalendarDate | null {
   const semantics = eventSemantics(event);
   if (!Object.prototype.hasOwnProperty.call(semantics, "scheduledDate")) {
@@ -1478,8 +1499,10 @@ function currentScheduleDate(event: OperationalEvent): CalendarDate | null {
  * before asOf. semantics.scheduledDate is the current date when present;
  * explicit null means no current date (cancelled, TBD, relative phrasing).
  * When scheduledDate is omitted, the slot is UNKNOWN. `object` is not
- * parsed as a date. Action text is never parsed. A date whose UTC
- * calendar day is before asOf is no longer current. Invalid asOf is UNKNOWN.
+ * parsed as a date. Action text is never parsed. Two latest-timestamp
+ * reports that disagree on the current date are CONFLICTING rather than
+ * a tie-broken date. A date whose UTC calendar day is before asOf is
+ * no longer current. Invalid asOf is UNKNOWN.
  */
 export function deriveImportantDateSlot(
   events: OperationalEvent[],
@@ -1503,6 +1526,19 @@ export function deriveImportantDateSlot(
   }
 
   const latest = getLatestEvent(scheduleEvents);
+  const latestTime = getEventTimestamp(latest);
+  const latestGroup = scheduleEvents.filter(
+    (event) => getEventTimestamp(event) === latestTime
+  );
+  const dateKeys = new Set(
+    latestGroup.map((event) => scheduleDateKey(event, asOfTime))
+  );
+  if (dateKeys.size > 1) {
+    return conflictingImportantDate(
+      latestGroup.map((event) => event.provenance.sourceArtifactId)
+    );
+  }
+
   const evidenceId = latest.provenance.sourceArtifactId;
   const structuredDate = currentScheduleDate(latest);
 
