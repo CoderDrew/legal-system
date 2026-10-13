@@ -6196,7 +6196,7 @@ test("significant-information: opposing-counsel email domain gives SUPPORTED", (
   const matter = syntheticMatters[0];
   const evidence = [
     ...structuredClone(evidenceProcessing.eligibleEvidence),
-    cloneEvidence({ id: "test-opposing-email", from: "opposing@external-law.example" })
+    cloneEvidence({ id: "test-opposing-email" })
   ];
   const events = [cloneDocEvent({
     eventId: "test-evt-opposing",
@@ -6216,11 +6216,11 @@ test("significant-information: opposing-counsel email domain gives SUPPORTED", (
   assert.deepEqual([...derived.evidenceIds], ["test-opposing-email"]);
 });
 
-test("significant-information: court actor gives SUPPORTED", () => {
+test("significant-information: court actor gives SUPPORTED (role alone, no email)", () => {
   const matter = syntheticMatters[0];
   const evidence = [
     ...structuredClone(evidenceProcessing.eligibleEvidence),
-    cloneEvidence({ id: "test-court-doc" })
+    cloneEvidence({ id: "test-court-doc", from: undefined })
   ];
   const events = [cloneDocEvent({
     eventId: "test-evt-court",
@@ -6275,6 +6275,98 @@ test("significant-information: own-firm email gives UNKNOWN", () => {
     object: "Update",
     occurredAt: "2026-09-16T14:00:00Z",
     provenance: { ...baseDocEvent.provenance, sourceArtifactId: "test-firm-email" }
+  })];
+
+  const derived = deriveSignificantNewInformationSlot(
+    events, matter.id, matter, evidence, syntheticRequestingUser, "2026-09-17T00:00:00Z"
+  );
+
+  assert.equal(derived.state, "UNKNOWN");
+  assert.equal(derived.value, "Unknown");
+});
+
+test("significant-information: client-side actor with client domain gives UNKNOWN", () => {
+  const matter = syntheticMatters[0];
+  const evidence = [
+    ...structuredClone(evidenceProcessing.eligibleEvidence),
+    cloneEvidence({ id: "test-cfo-email", from: "cfo@smithco.example" })
+  ];
+  const events = [cloneDocEvent({
+    eventId: "test-evt-cfo",
+    matterId: matter.id,
+    actor: "Client's CFO",
+    object: "Internal memo",
+    occurredAt: "2026-09-16T14:00:00Z",
+    provenance: { ...baseDocEvent.provenance, sourceArtifactId: "test-cfo-email" }
+  })];
+
+  const derived = deriveSignificantNewInformationSlot(
+    events, matter.id, matter, evidence, syntheticRequestingUser, "2026-09-17T00:00:00Z"
+  );
+
+  assert.equal(derived.state, "UNKNOWN");
+  assert.equal(derived.value, "Unknown");
+});
+
+test("significant-information: no actor with client domain gives UNKNOWN", () => {
+  const matter = syntheticMatters[0];
+  const evidence = [
+    ...structuredClone(evidenceProcessing.eligibleEvidence),
+    cloneEvidence({ id: "test-no-actor-client", from: "cfo@smithco.example" })
+  ];
+  const events = [cloneDocEvent({
+    eventId: "test-evt-no-actor-client",
+    matterId: matter.id,
+    actor: null,
+    object: "Document",
+    occurredAt: "2026-09-16T14:00:00Z",
+    provenance: { ...baseDocEvent.provenance, sourceArtifactId: "test-no-actor-client" }
+  })];
+
+  const derived = deriveSignificantNewInformationSlot(
+    events, matter.id, matter, evidence, syntheticRequestingUser, "2026-09-17T00:00:00Z"
+  );
+
+  assert.equal(derived.state, "UNKNOWN");
+  assert.equal(derived.value, "Unknown");
+});
+
+test("significant-information: no actor with personal domain gives UNKNOWN", () => {
+  const matter = syntheticMatters[0];
+  const evidence = [
+    ...structuredClone(evidenceProcessing.eligibleEvidence),
+    cloneEvidence({ id: "test-no-actor-personal", from: "jordan.smith.personal@gmail.com" })
+  ];
+  const events = [cloneDocEvent({
+    eventId: "test-evt-no-actor-personal",
+    matterId: matter.id,
+    actor: null,
+    object: "Email",
+    occurredAt: "2026-09-16T14:00:00Z",
+    provenance: { ...baseDocEvent.provenance, sourceArtifactId: "test-no-actor-personal" }
+  })];
+
+  const derived = deriveSignificantNewInformationSlot(
+    events, matter.id, matter, evidence, syntheticRequestingUser, "2026-09-17T00:00:00Z"
+  );
+
+  assert.equal(derived.state, "UNKNOWN");
+  assert.equal(derived.value, "Unknown");
+});
+
+test("significant-information: no actor with opposing-looking domain gives UNKNOWN", () => {
+  const matter = syntheticMatters[0];
+  const evidence = [
+    ...structuredClone(evidenceProcessing.eligibleEvidence),
+    cloneEvidence({ id: "test-no-actor-opposing", from: "lawyer@opposing-firm.example" })
+  ];
+  const events = [cloneDocEvent({
+    eventId: "test-evt-no-actor-opposing",
+    matterId: matter.id,
+    actor: null,
+    object: "Letter",
+    occurredAt: "2026-09-16T14:00:00Z",
+    provenance: { ...baseDocEvent.provenance, sourceArtifactId: "test-no-actor-opposing" }
   })];
 
   const derived = deriveSignificantNewInformationSlot(
@@ -6341,15 +6433,8 @@ test("significant-information: chooses latest of two external documents", () => 
     cloneEvidence({ id: "test-early", from: "opposing@external-law.example" }),
     cloneEvidence({ id: "test-later", from: "opposing@external-law.example" }),
   ];
+  // Later event comes FIRST to test sorting, not array order
   const events = [
-    cloneDocEvent({
-      eventId: "test-evt-early",
-      matterId: matter.id,
-      actor: "Opposing counsel",
-      object: "Early document",
-      occurredAt: "2026-09-10T10:00:00Z",
-      provenance: { ...baseDocEvent.provenance, sourceArtifactId: "test-early" }
-    }),
     cloneDocEvent({
       eventId: "test-evt-later",
       matterId: matter.id,
@@ -6357,6 +6442,14 @@ test("significant-information: chooses latest of two external documents", () => 
       object: "Revised proposal",
       occurredAt: "2026-09-15T14:00:00Z",
       provenance: { ...baseDocEvent.provenance, sourceArtifactId: "test-later" }
+    }),
+    cloneDocEvent({
+      eventId: "test-evt-early",
+      matterId: matter.id,
+      actor: "Opposing counsel",
+      object: "Early document",
+      occurredAt: "2026-09-10T10:00:00Z",
+      provenance: { ...baseDocEvent.provenance, sourceArtifactId: "test-early" }
     }),
   ];
 

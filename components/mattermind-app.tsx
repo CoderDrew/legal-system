@@ -220,9 +220,10 @@ export function MatterMindApp() {
                   No status brief shown
                 </h2>
                 <p className="mt-2 text-sm leading-6 text-slate-600">
-                  This increment derives the current-status, last-important-event, waiting-on,
-                  next-action, owner, and important-date slots from operational events. The other 1 slot remains predefined. Show
-                  the brief to review claims, evidence states, and source provenance.
+                  This increment derives all 7 slots from operational events:
+                  current-status, last-important-event, waiting-on, next-action, owner,
+                  important-date, and significant-information. Show the brief to review
+                  claims, evidence states, and source provenance.
                 </p>
               </div>
             </section>

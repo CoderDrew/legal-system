@@ -1992,27 +1992,26 @@ function formatSignificantNewInformation(event: OperationalEvent): string {
 }
 
 /**
- * Derives the significant-new-information slot from operational events.
+ * Derives the significant-information slot from operational events.
  *
- * "Significant new information" is defined as evidence or documents
+ * "Significant information" is defined as evidence or documents
  * received from external parties (not the client, not our firm/attorney).
  * This slot identifies the most recent substantive information received
  * from opposing counsel, courts, third parties, or other external sources.
  *
  * Structured data first: the latest DOCUMENT_SENT event from an external
- * party at or before asOf, identified via actor and email-from matching.
+ * party at or before asOf, identified via actor matching.
  * 
- * External party detection requires positive evidence:
- * - A known external role (opposing counsel, court, third party), OR
- * - An email artifact from a domain that is neither the firm's nor the client's
+ * External party detection: a sender counts as external ONLY when its actor
+ * matches a known external role (opposing counsel, court, third party, etc.).
+ * Everything else gives UNKNOWN, regardless of email domain.
  * 
  * Events from the client or our firm (responsible attorney, requesting user,
- * firm-domain staff) are excluded. Events that cannot be classified (unknown
- * sender, no artifact, no email domain) give UNKNOWN rather than being assumed
- * external.
+ * firm staff) are excluded. Events that cannot be classified (unknown
+ * sender, no identifiable external role) give UNKNOWN.
  *
  * No text fallback is used: determining whether an event is from an external
- * party requires structured actor or email-from data.
+ * party requires a structured actor matching a known external role.
  *
  * asOf is explicit; an invalid asOf gives UNKNOWN. Only events at or before
  * asOf are considered.
@@ -2043,70 +2042,17 @@ export function deriveSignificantNewInformationSlot(
     return unknownSignificantNewInformation();
   }
 
-  // Compute firm domains once to avoid O(n²) complexity
-  const firmDomains = firmDomainsFromStructuredIdentity(
-    matter,
-    requestingUser,
-    eligibleEvidence
-  );
-
-  // Create artifact lookup map to avoid O(n²) complexity
-  const artifactMap = new Map(
-    eligibleEvidence.map((item) => [item.id, item])
-  );
-
   const externalDocumentEvents = documentEvents.filter((event) => {
     // Exclude client and own side actors
     if (
-      isClientActor(event.actor, matter) ||
-      isOwnSideActor(event.actor, matter, requestingUser)
+      isClientActor(event.actor, matter)
+      // || isOwnSideActor(event.actor, matter, requestingUser)
     ) {
       return false;
     }
 
-    const artifact = artifactMap.get(event.provenance.sourceArtifactId);
-
-    // Exclude emails from client
-    if (isEmailFromPerson(artifact, matter.client)) {
-      return false;
-    }
-
-    // Exclude emails from own side using pre-computed firm domains
-    const artifactFrom = artifact?.from;
-    if (artifactFrom) {
-      if (
-        isEmailFromPerson(artifact, matter.responsibleAttorney) ||
-        isEmailFromPerson(artifact, requestingUser.name)
-      ) {
-        return false;
-      }
-
-      const domain = artifactFrom!.toLowerCase().split("@")[1] ?? "";
-      if (domain && firmDomains.has(domain)) {
-        return false;
-      }
-    }
-
-    // Require positive evidence that sender is external:
-    // 1. Known external role, OR
-    // 2. Email from a domain (neither firm nor client)
-    
-    // Known external role
-    if (isExternalActor(event.actor)) {
-      return true;
-    }
-
-    // Email from external domain (we already excluded firm and client above)
-    const externalArtifactFrom = artifact?.from;
-    if (externalArtifactFrom) {
-      const domain = externalArtifactFrom!.toLowerCase().split("@")[1] ?? "";
-      if (domain) {
-        return true; // Has domain, not firm, not client = external
-      }
-    }
-
-    // No positive evidence of external party
-    return false;
+    // Accept only if actor matches a known external role
+    return isExternalActor(event.actor);
   });
 
   if (externalDocumentEvents.length === 0) {
