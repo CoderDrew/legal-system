@@ -158,15 +158,11 @@ const OWN_SIDE_ROLE_LABELS = new Set([
 const EXTERNAL_ROLE_LABELS = new Set([
   "opposing counsel",
   "opposing attorney",
-  "defendant's counsel",
-  "plaintiff's counsel",
   "court",
   "the court",
   "judge",
   "third party",
   "third-party",
-  "expert witness",
-  "witness",
 ]);
 const COURT_ROLE_LABELS = new Set(["court", "court clerk"]);
 
@@ -2044,10 +2040,7 @@ export function deriveSignificantNewInformationSlot(
 
   const externalDocumentEvents = documentEvents.filter((event) => {
     // Exclude client and own side actors
-    if (
-      isClientActor(event.actor, matter)
-      // || isOwnSideActor(event.actor, matter, requestingUser)
-    ) {
+    if (isClientActor(event.actor, matter)) {
       return false;
     }
 
